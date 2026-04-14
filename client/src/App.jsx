@@ -43,6 +43,8 @@ export default function App() {
     [results, selectedPaperId]
   );
 
+  const guide = graphData?.data?.meta?.guide ?? graphData?.meta?.guide ?? null;
+
   async function handleSearch(event) {
     event.preventDefault();
     if (!query.trim()) return;
@@ -79,7 +81,16 @@ export default function App() {
     setSelectedPaperId(paperId);
 
     try {
-      const response = await fetch(`${API_BASE}/api/papers/${paperId}/ancestors`);
+      const response = await fetch(`${API_BASE}/api/papers/ancestor-tree`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          ...paper,
+          query: query.trim()
+        })
+      });
       if (!response.ok) throw new Error(`Ancestor fetch failed: ${response.status}`);
       const payload = await response.json();
       setGraphData(payload);
@@ -92,16 +103,25 @@ export default function App() {
     }
   }
 
+  async function handleTopMatchTree() {
+    if (results.length === 0) return;
+    await handlePaperClick(results[0]);
+  }
+
   return (
     <main className="app">
-      <h1>Research Genealogy Backend Tester</h1>
+      <h1>PaperTrail</h1>
+      <p className="intro">
+        Enter a research topic, paper title, DOI, or paper link. PaperTrail finds promising starting
+        points and builds a guided ancestor tree of what to read first.
+      </p>
 
       <form onSubmit={handleSearch} className="search-row">
         <input
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search by title or abstract"
+          placeholder="Try a research topic, paper title, DOI, or paper link"
           aria-label="Search papers"
         />
         <button type="submit" disabled={loadingSearch}>
@@ -115,31 +135,61 @@ export default function App() {
       {error ? <p className="error">{error}</p> : null}
 
       <section>
-        <h2>Results</h2>
+        <h2>Starting Points</h2>
         {results.length === 0 ? (
-          <p>No results yet.</p>
+          <p>Search for a topic or paper to see likely starting points.</p>
         ) : (
-          <ul className="results">
-            {results.map((paper) => {
-              const id = getPaperId(paper);
-              return (
-                <li key={id || getPaperTitle(paper)}>
-                  <button type="button" className="paper-btn" onClick={() => handlePaperClick(paper)}>
-                    <strong>{getPaperTitle(paper)}</strong>
-                    <span>Authors: {getPaperAuthors(paper)}</span>
-                    <span>Influence Score: {getInfluenceScore(paper)}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <div className="results-header">
+              <p>
+                Pick the best seed paper for your research direction, or let PaperTrail build a guided
+                tree from the top match.
+              </p>
+              <button type="button" onClick={handleTopMatchTree} disabled={loadingTree}>
+                {loadingTree ? "Building..." : "Build Tree From Top Match"}
+              </button>
+            </div>
+
+            <ul className="results">
+              {results.map((paper, index) => {
+                const id = getPaperId(paper);
+                return (
+                  <li key={id || getPaperTitle(paper)}>
+                    <button type="button" className="paper-btn" onClick={() => handlePaperClick(paper)}>
+                      <strong>
+                        {index + 1}. {getPaperTitle(paper)}
+                      </strong>
+                      <span>Authors: {getPaperAuthors(paper)}</span>
+                      <span>Influence Score: {getInfluenceScore(paper)}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </section>
 
       <section>
-        <h2>Ancestor Tree</h2>
-        {selectedPaper ? <p>Selected: {getPaperTitle(selectedPaper)}</p> : null}
+        <h2>Guided Reading Tree</h2>
+        {selectedPaper ? <p>Seed paper: {getPaperTitle(selectedPaper)}</p> : null}
         {loadingTree ? <p>Loading ancestor tree...</p> : null}
+        {guide ? (
+          <div className="guide-card">
+            <h3>{guide.title}</h3>
+            <p>{guide.summary}</p>
+            {Array.isArray(guide.recommendedOrder) && guide.recommendedOrder.length > 0 ? (
+              <ol className="guide-list">
+                {guide.recommendedOrder.map((item) => (
+                  <li key={item.id || item.title}>
+                    <strong>{item.title}</strong>
+                    <span>{item.reason}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+          </div>
+        ) : null}
         {graphData ? <ForceGraph data={graphData} /> : <p>Click a result to render its tree.</p>}
       </section>
 

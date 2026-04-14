@@ -1,5 +1,5 @@
 const paperRepository = require("./paper.repository");
-const { fetchExternalPapers } = require("./paper.external");
+const { fetchAncestorTree, fetchExternalPapers } = require("./paper.external");
 
 class PaperService {
   async getRecentPapers(limit) {
@@ -18,6 +18,20 @@ class PaperService {
     }
 
     return fetchExternalPapers(query, normalizedLimit);
+  }
+
+  async getAncestorTree(selection) {
+    if (!selection || typeof selection !== "object") {
+      const error = new Error("A selected paper or query is required.");
+      error.status = 400;
+      throw error;
+    }
+
+    return fetchAncestorTree(selection, {
+      depth: selection.depth,
+      breadth: selection.breadth,
+      maxNodes: selection.maxNodes
+    });
   }
 }
 

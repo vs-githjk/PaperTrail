@@ -21,6 +21,16 @@ class PaperController {
       next(error);
     }
   }
+
+  async ancestors(req, res, next) {
+    try {
+      const payload = req.body && typeof req.body === "object" ? req.body : {};
+      const graph = await paperService.getAncestorTree(payload);
+      res.json(graph);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new PaperController();

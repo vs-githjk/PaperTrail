@@ -10,4 +10,13 @@ const redisClient = new Redis({
   retryStrategy: null
 });
 
+let hasWarnedAboutRedis = false;
+
+redisClient.on("error", () => {
+  if (!hasWarnedAboutRedis) {
+    hasWarnedAboutRedis = true;
+    console.warn("Redis connection failed; cache operations will be skipped.");
+  }
+});
+
 module.exports = { redisClient };

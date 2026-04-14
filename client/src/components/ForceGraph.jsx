@@ -82,6 +82,18 @@ export default function ForceGraph({ data }) {
 
     node.append("title").text((d) => d.title || d.label || d.id);
 
+    const labels = svg
+      .append("g")
+      .selectAll("text")
+      .data(nodes)
+      .enter()
+      .append("text")
+      .text((d) => d.year ? `${d.title} (${d.year})` : (d.title || d.label || d.id))
+      .attr("font-size", 11)
+      .attr("fill", "#1f2937")
+      .attr("dx", 10)
+      .attr("dy", 4);
+
     simulation.on("tick", () => {
       link
         .attr("x1", (d) => d.source.x)
@@ -90,6 +102,7 @@ export default function ForceGraph({ data }) {
         .attr("y2", (d) => d.target.y);
 
       node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
+      labels.attr("x", (d) => d.x).attr("y", (d) => d.y);
     });
 
     return () => simulation.stop();
