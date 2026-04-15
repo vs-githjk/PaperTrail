@@ -88,6 +88,7 @@ PaperTrail will:
 2. organize them into a staged reading plan
 3. let you choose a seed paper
 4. build a guided ancestor tree when available
+5. save recent trails and papers into the workspace when Postgres is available
 
 ## Useful Commands
 
@@ -111,6 +112,7 @@ npm run build
 - Exact-title lookups are cleaner now and keep one main seed in `Start Here`
 - Broad-topic plans are staged, but retrieval quality is still being improved
 - Ancestor trees may fall back to placeholder guidance when live citation expansion is unavailable
+- Recent research trails appear in the workspace view when local persistence is available
 
 ## Main Docs
 

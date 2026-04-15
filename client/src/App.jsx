@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ForceGraph from "./components/ForceGraph";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
@@ -37,10 +37,23 @@ function getRoleLabel(paper) {
   return paper.roleLabel ?? null;
 }
 
+function formatSessionTime(value) {
+  if (!value) return "Saved recently";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Saved recently";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+}
+
 export default function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searchPlan, setSearchPlan] = useState([]);
+  const [workspace, setWorkspace] = useState({ recentPapers: [], recentResearch: [] });
   const [selectedPaperId, setSelectedPaperId] = useState(null);
   const [graphData, setGraphData] = useState(null);
   const [rawData, setRawData] = useState(null);
@@ -55,6 +68,48 @@ export default function App() {
   );
 
   const guide = graphData?.data?.meta?.guide ?? graphData?.meta?.guide ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadWorkspace() {
+      try {
+        const response = await fetch(`${API_BASE}/api/workspace`);
+        if (!response.ok) throw new Error(`Workspace failed: ${response.status}`);
+        const payload = await response.json();
+        if (!cancelled) {
+          setWorkspace({
+            recentPapers: payload?.data?.recentPapers || [],
+            recentResearch: payload?.data?.recentResearch || []
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setWorkspace({ recentPapers: [], recentResearch: [] });
+        }
+      }
+    }
+
+    loadWorkspace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function refreshWorkspace() {
+    try {
+      const response = await fetch(`${API_BASE}/api/workspace`);
+      if (!response.ok) return;
+      const payload = await response.json();
+      setWorkspace({
+        recentPapers: payload?.data?.recentPapers || [],
+        recentResearch: payload?.data?.recentResearch || []
+      });
+    } catch (error) {
+      // Leave the current workspace state alone if refresh fails.
+    }
+  }
 
   async function handleSearch(event) {
     event.preventDefault();
@@ -75,6 +130,7 @@ export default function App() {
       setResults(papers);
       setSearchPlan(payload?.meta?.readingPlan || []);
       setRawData(payload);
+      await refreshWorkspace();
     } catch (err) {
       setError(err.message || "Search request failed.");
       setResults([]);
@@ -108,6 +164,7 @@ export default function App() {
       const payload = await response.json();
       setGraphData(payload);
       setRawData(payload);
+      await refreshWorkspace();
     } catch (err) {
       setError(err.message || "Ancestor request failed.");
       setGraphData(null);
@@ -146,6 +203,61 @@ export default function App() {
       </form>
 
       {error ? <p className="error">{error}</p> : null}
+
+      <section>
+        <h2>Research Workspace</h2>
+        <div className="workspace-grid">
+          <div className="guide-card">
+            <h3>Recent Research Trails</h3>
+            {workspace.recentResearch.length === 0 ? (
+              <p>Build an ancestor tree and PaperTrail will remember that trail here.</p>
+            ) : (
+              <ul className="workspace-list">
+                {workspace.recentResearch.map((session) => (
+                  <li key={session.id}>
+                    <button
+                      type="button"
+                      className="workspace-btn"
+                      onClick={() => {
+                        const selected = session.selectedPaper || {};
+                        setQuery(session.query || selected.title || "");
+                        handlePaperClick(selected);
+                      }}
+                    >
+                      <strong>{session.selectedPaper?.title || "Untitled paper"}</strong>
+                      <span>{session.query ? `Topic: ${session.query}` : "Saved research trail"}</span>
+                      {session.guide?.summary ? <span>{session.guide.summary}</span> : null}
+                      <span>
+                        {session.graphStats?.nodeCount || 0} papers, {session.graphStats?.linkCount || 0} links
+                      </span>
+                      <span>{formatSessionTime(session.createdAt)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="guide-card">
+            <h3>Recently Saved Papers</h3>
+            {workspace.recentPapers.length === 0 ? (
+              <p>Searches and tree generations will start filling this list as you work.</p>
+            ) : (
+              <ul className="workspace-list">
+                {workspace.recentPapers.map((paper) => (
+                  <li key={paper.id || paper.externalId || paper.title}>
+                    <div className="workspace-item">
+                      <strong>{paper.title}</strong>
+                      <span>{paper.year || "Year unknown"}</span>
+                      {paper.source ? <span>Source: {paper.source}</span> : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
 
       <section>
         <h2>Starting Points</h2>

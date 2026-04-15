@@ -247,3 +247,76 @@ test("broad-topic reading plans keep a single deliberate first read", () => {
   assert.equal(readingPlan[2].stage, "optional_supporting");
   assert.equal(readingPlan[2].items[0].id, "starter");
 });
+
+test("fallback ancestor guide includes staged reading-plan metadata", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => {
+    throw new Error("network unavailable");
+  };
+
+  try {
+    const result = await require("./paper.external").fetchAncestorTree({
+      title: "Attention Is All You Need",
+      query: "Attention Is All You Need"
+    });
+
+    const guide = result.data.meta.guide;
+    assert.ok(Array.isArray(guide.recommendedOrder));
+    assert.ok(Array.isArray(guide.readingPlan));
+    assert.equal(guide.readingPlan[0].stage, "start_here");
+    const stages = guide.readingPlan.map((section) => section.stage);
+    assert.ok(stages.includes("broader_overview"));
+    assert.ok(stages.includes("optional_supporting"));
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("live ancestor guide separates overview and foundational stages", () => {
+  const rootNode = {
+    id: "root",
+    title: "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+    year: 2019,
+    query: "transformers for language understanding"
+  };
+
+  const guide = __private.buildGuide(
+    [
+      rootNode,
+      {
+        id: "survey",
+        title: "A Survey of Transformer Models for Natural Language Processing",
+        year: 2020,
+        depth: 1,
+        authors: ["Survey Author"]
+      },
+      {
+        id: "seminal",
+        title: "Foundations of Neural Language Modeling",
+        year: 2008,
+        depth: 2,
+        authors: ["Foundations Author"]
+      },
+      {
+        id: "support",
+        title: "Sequence Modeling with Semi-Supervised Objectives",
+        year: 2018,
+        depth: 1,
+        authors: ["Support Author"]
+      }
+    ],
+    rootNode
+  );
+
+  const stages = guide.readingPlan.map((section) => section.stage);
+  assert.equal(stages[0], "start_here");
+  assert.ok(stages.includes("foundational_background"));
+
+  const startHereSection = guide.readingPlan.find((section) => section.stage === "start_here");
+  const overviewSection = guide.readingPlan.find((section) => section.stage === "broader_overview");
+
+  assert.equal(startHereSection.items[0].role, "overview");
+  if (overviewSection) {
+    assert.ok(overviewSection.items.every((item) => item.role === "overview"));
+  }
+});

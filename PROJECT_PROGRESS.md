@@ -354,6 +354,151 @@ Reduce obviously off-domain overview papers in broad-topic searches and add a pr
 - Ancestor-tree staged plans still need the same precision improvements as search plans
 - Broader-topic retrieval still depends on external result quality
 
+## Pass 10: Ancestor Plan Fallback Quality
+
+### Goal
+
+Bring fallback ancestor guidance closer to the staged search experience so ancestor plans degrade more gracefully when live citation expansion is unavailable.
+
+### Changes Made
+
+- Upgraded fallback ancestor recommendations to include:
+  - explicit roles
+  - role labels
+  - staged reading-plan metadata
+- Replaced plain fallback guide text items with richer structured recommendation objects
+- Added a regression test confirming fallback ancestor guides now include staged reading-plan sections
+
+### Key Files
+
+- [backend/src/modules/papers/paper.external.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.external.js:1)
+- [backend/src/modules/papers/paper.external.test.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.external.test.js:1)
+
+### Verification
+
+- Backend tests passed with `npm test`
+
+### Remaining Weaknesses
+
+- Live ancestor expansion still needs stronger stage-aware precision, not just fallback improvements
+- Ancestor plans still rely on shallow graph heuristics when citation data is available
+- Search-plan quality is still ahead of ancestor-plan quality
+
+## Pass 11: Live Ancestor Stage Precision
+
+### Goal
+
+Improve how real citation-derived ancestor nodes are staged so live ancestor plans feel closer to the search-plan quality.
+
+### Changes Made
+
+- Added stage-aware scoring for live ancestor recommendations
+- Introduced a dedicated ancestor reading-plan builder that separates:
+  - first read
+  - foundational background
+  - broader overview
+  - optional supporting reads
+- Improved live ancestor stage assignment so overview and foundational items are chosen more intentionally instead of relying on a single generic sort
+- Added a regression test for live ancestor stage separation
+
+### Key Files
+
+- [backend/src/modules/papers/paper.external.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.external.js:1)
+- [backend/src/modules/papers/paper.external.test.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.external.test.js:1)
+
+### Verification
+
+- Backend tests passed with `npm test`
+
+### Remaining Weaknesses
+
+- Live ancestor quality still depends on the citation data returned by external sources
+- Some ancestor-stage decisions are still heuristic rather than citation-network-aware
+- We have not yet added equivalent live-response verification for ancestor staging
+
+## Pass 12: First Persistence Layer
+
+### Goal
+
+Begin storing useful paper state locally so PaperTrail can evolve from a stateless research helper into a reusable research workspace.
+
+### Changes Made
+
+- Added first persistence hooks for searched and selected papers
+- Search now best-effort saves externally fetched papers into Postgres
+- Ancestor-tree generation now best-effort saves the selected seed paper
+- Extended the paper schema to include:
+  - `external_id`
+  - `source`
+- Added service-level tests covering persistence behavior
+
+### Key Files
+
+- [backend/src/modules/papers/paper.repository.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.repository.js:1)
+- [backend/src/modules/papers/paper.service.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.service.js:1)
+- [backend/src/modules/papers/paper.service.test.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.service.test.js:1)
+- [backend/src/server.js](/Users/vidyutsriram/PaperTrail/backend/src/server.js:1)
+- [backend/db/postgres/init/001_create_papers.sql](/Users/vidyutsriram/PaperTrail/backend/db/postgres/init/001_create_papers.sql:1)
+
+### Verification
+
+- Backend tests passed with `npm test`
+- Backend syntax checks passed for repository, service, and server files
+
+### Remaining Weaknesses
+
+- Persistence is still best-effort and only stores papers, not full reading plans
+- We are not yet surfacing saved papers back into the frontend experience in a dedicated way
+- Local persistence still depends on Postgres being available
+
+## Pass 13: Saved Research Workspace
+
+### Goal
+
+Turn the first persistence layer into an actual reusable workspace by storing research sessions and surfacing them in the app.
+
+### Changes Made
+
+- Added a `research_sessions` table for saved research trails
+- Ancestor-tree generation now best-effort saves:
+  - the original query
+  - the selected paper
+  - the guide metadata
+  - basic graph stats
+- Added a workspace snapshot service and API route:
+  - `GET /api/workspace`
+- Updated the frontend to show:
+  - recent research trails
+  - recently saved papers
+  - one-click restart from a prior research trail
+- Added service tests for:
+  - research-session persistence
+  - workspace snapshot responses
+
+### Key Files
+
+- [backend/src/modules/papers/paper.repository.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.repository.js:1)
+- [backend/src/modules/papers/paper.service.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.service.js:1)
+- [backend/src/modules/papers/paper.service.test.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.service.test.js:1)
+- [backend/src/modules/papers/paper.controller.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.controller.js:1)
+- [backend/src/routes/index.js](/Users/vidyutsriram/PaperTrail/backend/src/routes/index.js:1)
+- [backend/src/server.js](/Users/vidyutsriram/PaperTrail/backend/src/server.js:1)
+- [backend/db/postgres/init/001_create_papers.sql](/Users/vidyutsriram/PaperTrail/backend/db/postgres/init/001_create_papers.sql:1)
+- [client/src/App.jsx](/Users/vidyutsriram/PaperTrail/client/src/App.jsx:1)
+- [client/src/styles.css](/Users/vidyutsriram/PaperTrail/client/src/styles.css:1)
+
+### Verification
+
+- Backend tests passed with `npm test`
+- Frontend production build passed with `npm run build`
+- Workspace flow was validated at the API-contract level through service tests
+
+### Remaining Weaknesses
+
+- Research sessions currently store summaries and restart context, not the full graph payload
+- The workspace UI is useful, but still basic compared with the guided-reading experience
+- Saved state is still local-only and best-effort when Postgres is unavailable
+
 ## Current State
 
 What is working well now:
@@ -362,21 +507,22 @@ What is working well now:
 - The repo docs match the product better
 - The ranking layer is better than raw API output
 - The backend has its first real test coverage
+- The app now has the beginnings of a reusable research workspace
 
 What still needs work:
 - Better topic-intent reranking
 - Better ancestor quality and reading-order explanations
-- Local persistence of papers and trees
+- Deeper persistence of papers, trails, and graph state
 - Stronger graph modeling in Neo4j
 - More test coverage across backend and frontend
 
 ## Next Best Step
 
-The next pass should focus on ancestor-plan quality:
-- extend the same precision and staging cleanup into ancestor-tree recommendations
-- improve how ancestor nodes are assigned to `Foundational Background` vs `Broader Overview`
-- reduce fallback dependence for guided ancestor plans
-- keep narrowing the gap between search-plan quality and ancestor-plan quality
+The next pass should focus on richer saved-trail quality:
+- persist more of the generated graph state so returning to a session feels instant
+- let users pin or name a research trail instead of only relying on recency
+- improve the workspace UI so saved sessions include clearer reading-plan previews
+- start deciding which state belongs in Postgres versus Neo4j
 
 ## Update Rule
 

@@ -11,6 +11,8 @@ async function ensurePostgresSchema() {
       title TEXT NOT NULL,
       year INT,
       doi TEXT UNIQUE,
+      external_id TEXT UNIQUE,
+      source TEXT,
       abstract TEXT,
       authors JSONB DEFAULT '[]'::jsonb,
       influence_score DOUBLE PRECISION DEFAULT 0,
@@ -19,7 +21,20 @@ async function ensurePostgresSchema() {
   `);
 
   await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS research_sessions (
+      id BIGSERIAL PRIMARY KEY,
+      query TEXT,
+      selected_paper JSONB NOT NULL,
+      guide JSONB DEFAULT '{}'::jsonb,
+      graph_stats JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pgPool.query(`
     ALTER TABLE papers
+      ADD COLUMN IF NOT EXISTS external_id TEXT UNIQUE,
+      ADD COLUMN IF NOT EXISTS source TEXT,
       ADD COLUMN IF NOT EXISTS abstract TEXT,
       ADD COLUMN IF NOT EXISTS authors JSONB DEFAULT '[]'::jsonb,
       ADD COLUMN IF NOT EXISTS influence_score DOUBLE PRECISION DEFAULT 0;

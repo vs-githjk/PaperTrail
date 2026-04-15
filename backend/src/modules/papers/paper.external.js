@@ -486,6 +486,61 @@ function scoreAncestorNode(node, rootNode, queryProfile) {
   return score;
 }
 
+function scoreAncestorForStage(node, rootNode, queryProfile, stage) {
+  const baseScore = scoreAncestorNode(node, rootNode, queryProfile);
+  const roleMeta = classifyPaperRole(node, queryProfile, { depth: node.depth, rootYear: rootNode.year });
+
+  if (stage === "foundational_background") {
+    return baseScore + (roleMeta.role === "seminal" ? 60 : 0) + (node.depth > 1 ? 10 : 0);
+  }
+
+  if (stage === "broader_overview") {
+    return baseScore + (roleMeta.role === "overview" ? 70 : 0);
+  }
+
+  if (stage === "optional_supporting") {
+    return baseScore + (roleMeta.role === "supporting" ? 30 : 0);
+  }
+
+  return baseScore;
+}
+
+function buildAncestorReadingPlan(prioritized, rootNode, queryProfile) {
+  const startHere = prioritized.slice(0, 1);
+  const remaining = prioritized.slice(1);
+
+  const foundational = remaining
+    .filter((item) => item.role === "seminal")
+    .sort((left, right) => scoreAncestorForStage(right, rootNode, queryProfile, "foundational_background") -
+      scoreAncestorForStage(left, rootNode, queryProfile, "foundational_background"))
+    .slice(0, 2);
+
+  const overview = remaining
+    .filter((item) => item.role === "overview")
+    .sort((left, right) => scoreAncestorForStage(right, rootNode, queryProfile, "broader_overview") -
+      scoreAncestorForStage(left, rootNode, queryProfile, "broader_overview"))
+    .slice(0, 2);
+
+  const supportingIds = new Set([
+    ...startHere.map((item) => item.id),
+    ...foundational.map((item) => item.id),
+    ...overview.map((item) => item.id)
+  ]);
+
+  const supporting = remaining
+    .filter((item) => !supportingIds.has(item.id))
+    .sort((left, right) => scoreAncestorForStage(right, rootNode, queryProfile, "optional_supporting") -
+      scoreAncestorForStage(left, rootNode, queryProfile, "optional_supporting"))
+    .slice(0, 3);
+
+  return [
+    startHere.length > 0 ? { ...readingStageConfig("start_here"), items: startHere } : null,
+    foundational.length > 0 ? { ...readingStageConfig("foundational_background"), items: foundational } : null,
+    overview.length > 0 ? { ...readingStageConfig("broader_overview"), items: overview } : null,
+    supporting.length > 0 ? { ...readingStageConfig("optional_supporting"), items: supporting } : null
+  ].filter(Boolean);
+}
+
 async function fetchSemanticScholar(topic, limit) {
   const normalizedTopic = extractIdentifierFromQuery(topic);
   const url =
@@ -638,20 +693,40 @@ function dedupeByTitle(items) {
 function buildFallbackTree(paper) {
   const rootTitle = paper?.title || paper?.query || "Selected paper";
   const rootId = pickIdentifier(paper) || rootTitle;
+  const queryProfile = classifyQuery(paper?.query || paper?.title || "");
   const suggestedAncestors = [
-    `Foundational work behind ${rootTitle}`,
-    `Earlier survey related to ${rootTitle}`,
-    `Seminal methodology cited by ${rootTitle}`
+    {
+      id: `${rootId}-ancestor-1`,
+      title: `Foundational work behind ${rootTitle}`,
+      role: "seminal",
+      roleLabel: "Seminal Paper",
+      reason: "Likely foundational background"
+    },
+    {
+      id: `${rootId}-ancestor-2`,
+      title: `Earlier survey related to ${rootTitle}`,
+      role: "overview",
+      roleLabel: "Overview Paper",
+      reason: "Helpful overview while live citation data is unavailable"
+    },
+    {
+      id: `${rootId}-ancestor-3`,
+      title: `Supporting methodology cited by ${rootTitle}`,
+      role: "supporting",
+      roleLabel: "Supporting Paper",
+      reason: "Suggested supporting context"
+    }
   ];
 
   const nodes = [{ id: rootId, title: rootTitle, label: rootTitle, depth: 0 }];
   const links = [];
 
-  suggestedAncestors.forEach((title, index) => {
-    const id = `${rootId}-ancestor-${index + 1}`;
-    nodes.push({ id, title, label: title, depth: 1 });
-    links.push({ source: rootId, target: id });
+  suggestedAncestors.forEach((item) => {
+    nodes.push({ id: item.id, title: item.title, label: item.title, depth: 1 });
+    links.push({ source: rootId, target: item.id });
   });
+
+  const readingPlan = buildReadingPlan(suggestedAncestors, { queryProfile });
 
   return {
     data: {
@@ -665,11 +740,8 @@ function buildFallbackTree(paper) {
           title: `Start with ${rootTitle}`,
           summary:
             "PaperTrail could not fetch live citation data, so this is a placeholder reading path to keep exploration moving.",
-          recommendedOrder: suggestedAncestors.map((title, index) => ({
-            id: `${rootId}-ancestor-${index + 1}`,
-            title,
-            reason: index === 0 ? "Likely foundational background" : "Suggested supporting context"
-          }))
+          recommendedOrder: suggestedAncestors,
+          readingPlan
         },
         note: "Live citation data was unavailable, so a placeholder ancestor view was generated."
       }
@@ -705,7 +777,7 @@ function buildGuide(nodes, rootNode) {
       };
     });
 
-  const readingPlan = buildReadingPlan(prioritized, { queryProfile });
+  const readingPlan = buildAncestorReadingPlan(prioritized, rootNode, queryProfile);
 
   return {
     title: `Start with ${rootNode.title}`,

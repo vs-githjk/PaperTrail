@@ -121,6 +121,49 @@ button:disabled {
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.07);
 }
 
+.workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.workspace-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-btn,
+.workspace-item {
+  width: 100%;
+  min-height: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid #d8e1ec;
+  background: #f9fbfd;
+  color: #102033;
+  display: grid;
+  gap: 5px;
+  text-align: left;
+}
+
+.workspace-btn {
+  cursor: pointer;
+}
+
+.workspace-btn strong,
+.workspace-item strong {
+  font-size: 1rem;
+}
+
+.workspace-btn span,
+.workspace-item span {
+  color: #475569;
+  line-height: 1.4;
+}
+
 .guide-card h3 {
   margin: 0 0 8px;
 }
@@ -210,6 +253,10 @@ section {
   .results-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .workspace-grid {
+    grid-template-columns: 1fr;
   }
 
   button,

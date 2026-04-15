@@ -22,6 +22,16 @@ class PaperController {
     }
   }
 
+  async workspace(req, res, next) {
+    try {
+      const limit = Number(req.query.limit) || 6;
+      const workspace = await paperService.getWorkspaceSnapshot(limit);
+      res.json(workspace);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async ancestors(req, res, next) {
     try {
       const payload = req.body && typeof req.body === "object" ? req.body : {};

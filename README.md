@@ -26,6 +26,7 @@ The backend can run even if those local services are unavailable. In that case i
 ## API
 
 - `GET /api/health`
+- `GET /api/workspace`
 - `GET /api/papers`
 - `GET /api/search?q=<query>`
 - `POST /api/papers/ancestor-tree`
@@ -42,6 +43,7 @@ Example ancestor-tree request body:
 ```
 
 The ancestor-tree response also includes lightweight guide metadata so the frontend can explain what to read first, not just draw the graph.
+The workspace endpoint returns recent saved papers plus recent research trails so the UI can feel persistent across sessions.
 
 Progress across development passes is tracked in [PROJECT_PROGRESS.md](/Users/vidyutsriram/PaperTrail/PROJECT_PROGRESS.md:1).
 Practical local startup steps are documented in [RUN_INSTRUCTIONS.md](/Users/vidyutsriram/PaperTrail/RUN_INSTRUCTIONS.md:1).
@@ -89,7 +91,7 @@ The frontend defaults to `http://localhost:5173` and the backend to `http://loca
 ## Near-Term Roadmap
 
 - Improve ancestor quality by ranking sources around broad topic intent, not only direct paper matches
-- Persist searched papers into Postgres instead of using only live fetches
+- Persist reading plans and research trails more deeply instead of relying only on paper-level saves
 - Use Neo4j for stored graph relationships instead of on-demand-only tree building
 - Add caching for repeated searches and tree generation
 - Improve the guided reading experience beyond the current MVP heuristics
