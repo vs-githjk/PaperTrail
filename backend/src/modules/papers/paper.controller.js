@@ -16,7 +16,7 @@ class PaperController {
       const query = String(req.query.q || "");
       const limit = Number(req.query.limit) || 20;
       const papers = await paperService.searchPapers(query, limit);
-      res.json({ data: papers });
+      res.json(papers);
     } catch (error) {
       next(error);
     }

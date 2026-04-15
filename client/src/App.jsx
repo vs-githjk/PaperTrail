@@ -27,9 +27,20 @@ function getInfluenceScore(paper) {
   return "N/A";
 }
 
+function getRecommendationScore(paper) {
+  const score = paper.recommendationScore;
+  if (typeof score === "number") return score.toFixed(1);
+  return null;
+}
+
+function getRoleLabel(paper) {
+  return paper.roleLabel ?? null;
+}
+
 export default function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
+  const [searchPlan, setSearchPlan] = useState([]);
   const [selectedPaperId, setSelectedPaperId] = useState(null);
   const [graphData, setGraphData] = useState(null);
   const [rawData, setRawData] = useState(null);
@@ -62,10 +73,12 @@ export default function App() {
       const payload = await response.json();
       const papers = Array.isArray(payload) ? payload : payload.data || [];
       setResults(papers);
+      setSearchPlan(payload?.meta?.readingPlan || []);
       setRawData(payload);
     } catch (err) {
       setError(err.message || "Search request failed.");
       setResults([]);
+      setSearchPlan([]);
       setRawData(null);
     } finally {
       setLoadingSearch(false);
@@ -150,6 +163,26 @@ export default function App() {
               </button>
             </div>
 
+            {Array.isArray(searchPlan) && searchPlan.length > 0 ? (
+              <div className="guide-card">
+                <h3>Suggested Reading Path</h3>
+                {searchPlan.map((section) => (
+                  <div key={section.stage} className="plan-section">
+                    <strong>{section.label}</strong>
+                    <p>{section.description}</p>
+                    <ul className="plan-list">
+                      {section.items.map((item) => (
+                        <li key={item.id || item.title}>
+                          <span>{item.title}</span>
+                          {item.roleLabel ? <span>{item.roleLabel}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <ul className="results">
               {results.map((paper, index) => {
                 const id = getPaperId(paper);
@@ -159,8 +192,14 @@ export default function App() {
                       <strong>
                         {index + 1}. {getPaperTitle(paper)}
                       </strong>
+                      {getRoleLabel(paper) ? <span>Role: {getRoleLabel(paper)}</span> : null}
+                      {paper.roleReason ? <span>{paper.roleReason}</span> : null}
+                      {paper.matchReason ? <span>Why this is a good start: {paper.matchReason}</span> : null}
                       <span>Authors: {getPaperAuthors(paper)}</span>
                       <span>Influence Score: {getInfluenceScore(paper)}</span>
+                      {getRecommendationScore(paper) ? (
+                        <span>Recommendation Score: {getRecommendationScore(paper)}</span>
+                      ) : null}
                     </button>
                   </li>
                 );
@@ -183,10 +222,29 @@ export default function App() {
                 {guide.recommendedOrder.map((item) => (
                   <li key={item.id || item.title}>
                     <strong>{item.title}</strong>
+                    {item.roleLabel ? <span>Role: {item.roleLabel}</span> : null}
                     <span>{item.reason}</span>
                   </li>
                 ))}
               </ol>
+            ) : null}
+            {Array.isArray(guide.readingPlan) && guide.readingPlan.length > 0 ? (
+              <div className="guide-plan">
+                {guide.readingPlan.map((section) => (
+                  <div key={section.stage} className="plan-section">
+                    <strong>{section.label}</strong>
+                    <p>{section.description}</p>
+                    <ul className="plan-list">
+                      {section.items.map((item) => (
+                        <li key={item.id || item.title}>
+                          <span>{item.title}</span>
+                          {item.roleLabel ? <span>{item.roleLabel}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             ) : null}
           </div>
         ) : null}

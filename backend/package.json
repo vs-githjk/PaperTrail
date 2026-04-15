@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "lint": "echo \"Add linter setup\""
+    "lint": "echo \"Add linter setup\"",
+    "test": "node --test \"src/**/*.test.js\""
   },
   "keywords": [
     "research",

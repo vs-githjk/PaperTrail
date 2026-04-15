@@ -29,6 +29,43 @@ function normalizeArxivItem(entry) {
   };
 }
 
+const COMMON_QUERY_TERMS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "by",
+  "for",
+  "from",
+  "how",
+  "i",
+  "in",
+  "into",
+  "is",
+  "of",
+  "on",
+  "or",
+  "paper",
+  "papers",
+  "read",
+  "research",
+  "study",
+  "that",
+  "the",
+  "their",
+  "this",
+  "to",
+  "topic",
+  "want",
+  "with"
+]);
+
+const SURVEY_HINTS = ["survey", "review", "overview", "tutorial", "introduction", "primer", "systematic"];
+const CANONICAL_QUERY_SUFFIXES = ["survey", "review", "overview", "introduction"];
+
 function pickIdentifier(paper) {
   if (!paper || typeof paper !== "object") return "";
   return (
@@ -83,6 +120,372 @@ function looksLikeIdentifier(query) {
   return /10\.\d{4,9}\//i.test(query) || /(^|\s)\d{4}\.\d{4,5}(v\d+)?$/i.test(query);
 }
 
+function tokenize(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token && !COMMON_QUERY_TERMS.has(token) && token.length > 1);
+}
+
+function uniqueTokens(text) {
+  return [...new Set(tokenize(text))];
+}
+
+function countTokenOverlap(leftText, rightText) {
+  const leftTokens = new Set(uniqueTokens(leftText));
+  const rightTokens = uniqueTokens(rightText);
+  let matches = 0;
+
+  for (const token of rightTokens) {
+    if (leftTokens.has(token)) matches += 1;
+  }
+
+  return matches;
+}
+
+function coverageRatio(text, queryProfile) {
+  const tokenCount = Math.max(queryProfile.tokens.length, 1);
+  return countTokenOverlap(text, queryProfile.normalized) / tokenCount;
+}
+
+function hasSurveyHint(text) {
+  const lowered = String(text || "").toLowerCase();
+  return SURVEY_HINTS.some((hint) => lowered.includes(hint));
+}
+
+function importantTopicTokens(queryProfile) {
+  return queryProfile.tokens.filter((token) => token.length >= 4).slice(0, 4);
+}
+
+function countImportantTokenMatches(text, queryProfile) {
+  const importantTokens = importantTopicTokens(queryProfile);
+  if (importantTokens.length === 0) return 0;
+  const textTokens = new Set(uniqueTokens(text));
+  let matches = 0;
+
+  for (const token of importantTokens) {
+    if (textTokens.has(token)) matches += 1;
+  }
+
+  return matches;
+}
+
+function isOffDomainOverviewCandidate(paper, queryProfile) {
+  if (!queryProfile?.broadTopic) return false;
+
+  const title = String(paper.title || "");
+  if (!hasSurveyHint(title)) return false;
+
+  const titleCoverage = coverageRatio(title, queryProfile);
+  const abstractCoverage = coverageRatio(paper.abstract || "", queryProfile);
+  const importantMatches = countImportantTokenMatches(`${paper.title || ""} ${paper.abstract || ""}`, queryProfile);
+
+  return titleCoverage < 0.3 && abstractCoverage < 0.3 && importantMatches < 2;
+}
+
+function classifyPaperRole(paper, queryProfile, context = {}) {
+  const title = String(paper.title || "");
+  const titleCoverage = coverageRatio(title, queryProfile);
+  const influence = Number(paper.influenceScore || 0);
+  const depth = Number(context.depth ?? paper.depth ?? 0);
+  const year = Number(paper.year || 0);
+  const rootYear = Number(context.rootYear || 0);
+  const ageGap = rootYear > 0 && year > 0 ? rootYear - year : 0;
+
+  if (isOffDomainOverviewCandidate(paper, queryProfile)) {
+    return {
+      role: "supporting",
+      roleLabel: "Supporting Paper",
+      roleReason: "This is somewhat related, but it does not cover enough of your topic to be treated as a true overview."
+    };
+  }
+
+  if (hasSurveyHint(title) && !isOffDomainOverviewCandidate(paper, queryProfile)) {
+    return {
+      role: "overview",
+      roleLabel: "Overview Paper",
+      roleReason: "This looks like a survey, review, or introduction that can quickly build context."
+    };
+  }
+
+  if (depth > 0 && ageGap >= 8) {
+    return {
+      role: "seminal",
+      roleLabel: "Seminal Paper",
+      roleReason: "This appears to be older foundational work that likely shaped later research in the area."
+    };
+  }
+
+  if (queryProfile.exactishTitle || queryProfile.directIdentifier) {
+    return {
+      role: "seed",
+      roleLabel: "Seed Paper",
+      roleReason: "This is the main paper that best matches the specific title or identifier you entered."
+    };
+  }
+
+  if (titleCoverage >= 0.6 || influence >= 50 || depth === 0) {
+    return {
+      role: "starting_point",
+      roleLabel: "Best Starting Paper",
+      roleReason: "This is a strong first paper to begin reading before branching outward."
+    };
+  }
+
+  return {
+    role: "supporting",
+    roleLabel: "Supporting Paper",
+    roleReason: "This adds useful context, but it is probably not the first paper to read."
+  };
+}
+
+function readingStageConfig(stage) {
+  if (stage === "start_here") {
+    return {
+      stage,
+      label: "Start Here",
+      description: "Read these first to get oriented quickly."
+    };
+  }
+
+  if (stage === "foundational_background") {
+    return {
+      stage,
+      label: "Foundational Background",
+      description: "Older or core papers that shaped the area."
+    };
+  }
+
+  if (stage === "broader_overview") {
+    return {
+      stage,
+      label: "Broader Overview",
+      description: "Surveys and reviews that help you zoom out."
+    };
+  }
+
+  return {
+    stage: "optional_supporting",
+    label: "Optional Supporting Reads",
+    description: "Useful supporting context once you have the basics."
+  };
+}
+
+function stageForRole(role, index = 0, options = {}) {
+  const queryProfile = options.queryProfile || null;
+
+  if (queryProfile?.broadTopic) {
+    if (index === 0 && (role === "overview" || role === "starting_point")) return "start_here";
+    if (role === "overview") return "broader_overview";
+    if (role === "seminal") return "foundational_background";
+    if (role === "starting_point") return "optional_supporting";
+    return "optional_supporting";
+  }
+
+  if (index === 0 || role === "seed" || role === "starting_point") return "start_here";
+  if (role === "seminal") return "foundational_background";
+  if (role === "overview") return "broader_overview";
+  return "optional_supporting";
+}
+
+function buildReadingPlan(items, options = {}) {
+  const queryProfile = options.queryProfile || null;
+  const grouped = new Map();
+
+  for (const [index, item] of items.entries()) {
+    let stage = stageForRole(item.role, index, { queryProfile });
+
+    if (queryProfile?.exactishTitle && index > 0 && item.role === "seed") {
+      stage = "optional_supporting";
+    }
+
+    if (!grouped.has(stage)) {
+      grouped.set(stage, {
+        ...readingStageConfig(stage),
+        items: []
+      });
+    }
+
+    grouped.get(stage).items.push(item);
+  }
+
+  return [
+    grouped.get("start_here"),
+    grouped.get("foundational_background"),
+    grouped.get("broader_overview"),
+    grouped.get("optional_supporting")
+  ]
+    .filter(Boolean)
+    .map((section) => {
+      if (section.stage === "start_here" && queryProfile?.exactishTitle) {
+        return {
+          ...section,
+          items: section.items.slice(0, 1)
+        };
+      }
+
+      return section;
+    });
+}
+
+function classifyQuery(query) {
+  const rawQuery = String(query || "").trim();
+  const normalized = extractIdentifierFromQuery(rawQuery);
+  const tokens = uniqueTokens(normalized);
+  const lowered = normalized.toLowerCase();
+  const hasQuotedTitle = /["“”]/.test(rawQuery);
+  const originalWords = rawQuery.split(/\s+/).filter(Boolean);
+  const titleCaseLikeWords = originalWords.filter((word) => /^[A-Z][A-Za-z0-9-]*$/.test(word));
+  const titleCaseRatio = originalWords.length > 0 ? titleCaseLikeWords.length / originalWords.length : 0;
+  const exactishTitle =
+    tokens.length > 0 &&
+    tokens.length <= 8 &&
+    !looksLikeIdentifier(normalized) &&
+    (hasQuotedTitle || titleCaseRatio >= 0.6);
+  const broadTopic =
+    !looksLikeIdentifier(normalized) &&
+    !hasQuotedTitle &&
+    !exactishTitle &&
+    (tokens.length >= 3 || /\b(topic|overview|introduction|basics|fundamentals)\b/.test(lowered));
+
+  return {
+    normalized,
+    lowered,
+    tokens,
+    broadTopic,
+    directIdentifier: looksLikeIdentifier(normalized),
+    exactishTitle
+  };
+}
+
+function toTitleCase(token) {
+  return token.charAt(0).toUpperCase() + token.slice(1);
+}
+
+function buildCandidateQueries(queryProfile) {
+  const base = queryProfile.normalized.trim();
+  if (!base) return [];
+
+  const queries = [base];
+
+  if (queryProfile.exactishTitle) {
+    queries.push(`"${base}"`);
+    queries.push(`${base} paper`);
+  }
+
+  if (queryProfile.broadTopic) {
+    for (const suffix of CANONICAL_QUERY_SUFFIXES) {
+      queries.push(`${base} ${suffix}`);
+    }
+
+    const compactTopic = queryProfile.tokens.slice(0, 5).join(" ");
+    if (compactTopic && compactTopic !== base.toLowerCase()) {
+      queries.push(compactTopic);
+    }
+  }
+
+  return [...new Set(queries.map((query) => query.trim()).filter(Boolean))];
+}
+
+function inferMatchReason(paper, queryProfile) {
+  const title = String(paper.title || "");
+  const titleOverlap = countTokenOverlap(title, queryProfile.normalized);
+  const titleCoverage = coverageRatio(title, queryProfile);
+
+  if (queryProfile.directIdentifier) return "Direct identifier match";
+  if (hasSurveyHint(title) && queryProfile.broadTopic && !isOffDomainOverviewCandidate(paper, queryProfile)) {
+    return "Strong overview paper for a broad topic";
+  }
+  if (titleCoverage >= 0.75 || titleOverlap >= Math.max(2, Math.ceil(queryProfile.tokens.length / 2))) {
+    return "Title closely matches your topic";
+  }
+  if (titleCoverage >= 0.5 && countTokenOverlap(paper.abstract || "", queryProfile.normalized) >= 2) {
+    return "Abstract strongly matches your topic";
+  }
+
+  return "Promising seed paper for this research direction";
+}
+
+function scoreSeedPaper(paper, queryProfile) {
+  const title = String(paper.title || "");
+  const abstract = String(paper.abstract || "");
+  const titleLower = title.toLowerCase();
+  const queryLower = queryProfile.lowered;
+  const titleOverlap = countTokenOverlap(title, queryProfile.normalized);
+  const abstractOverlap = countTokenOverlap(abstract, queryProfile.normalized);
+  const titleCoverage = coverageRatio(title, queryProfile);
+  const abstractCoverage = coverageRatio(abstract, queryProfile);
+  const influence = Number(paper.influenceScore || 0);
+  const year = Number(paper.year || 0);
+
+  let score = 0;
+
+  if (queryProfile.directIdentifier) {
+    if (paper.paperId || paper.doi || paper.id) score += 500;
+    if (titleOverlap > 0) score += 20;
+  } else {
+    if (titleLower === queryLower) score += 220;
+    if (titleLower.includes(queryLower) && queryLower.length > 6) score += 120;
+    if (queryProfile.exactishTitle && titleLower.startsWith(queryLower)) score += 80;
+    if (queryProfile.exactishTitle && titleLower.endsWith(queryLower)) score += 50;
+    if (queryProfile.exactishTitle && titleLower.includes("all you need") && titleLower !== queryLower) score -= 45;
+    score += titleOverlap * (queryProfile.broadTopic ? 26 : 34);
+    score += abstractOverlap * (queryProfile.broadTopic ? 10 : 6);
+    score += titleCoverage * (queryProfile.broadTopic ? 90 : 60);
+  }
+
+  if (queryProfile.broadTopic) {
+    if (hasSurveyHint(title) && !isOffDomainOverviewCandidate(paper, queryProfile)) score += 90;
+    if (isOffDomainOverviewCandidate(paper, queryProfile)) score -= 110;
+    if (titleCoverage >= 0.8) score += 60;
+    else if (titleCoverage >= 0.6) score += 25;
+
+    if (titleCoverage < 0.4 && !hasSurveyHint(title)) {
+      score -= 80;
+    } else if (titleCoverage < 0.6 && !hasSurveyHint(title)) {
+      score -= 35;
+    }
+
+    if (titleCoverage < 0.4 && abstractCoverage > 0.5) {
+      score -= 20;
+    }
+    score += Math.min(influence, 120);
+    if (year >= 2018) score += 8;
+  } else {
+    score += Math.min(influence, 80);
+    if (year >= 2015) score += 6;
+  }
+
+  if (paper.source === "semantic_scholar") score += 12;
+  if (paper.doi) score += 10;
+  if (Array.isArray(paper.authors) && paper.authors.length > 0) score += 4;
+
+  return score;
+}
+
+function scoreAncestorNode(node, rootNode, queryProfile) {
+  const titleOverlap = countTokenOverlap(node.title, queryProfile.normalized || rootNode.title);
+  const authorWeight = Array.isArray(node.authors) ? Math.min(node.authors.length, 4) : 0;
+  const year = Number(node.year || 0);
+  let score = 0;
+
+  score += titleOverlap * 18;
+  score += node.depth === 1 ? 30 : Math.max(6, 24 - node.depth * 8);
+  score += authorWeight * 2;
+
+  if (year > 0 && rootNode.year > 0) {
+    const ageGap = rootNode.year - year;
+    if (ageGap >= 1 && ageGap <= 12) score += 18;
+    else if (ageGap > 12) score += 10;
+  }
+
+  if (hasSurveyHint(node.title)) score += 12;
+
+  return score;
+}
+
 async function fetchSemanticScholar(topic, limit) {
   const normalizedTopic = extractIdentifierFromQuery(topic);
   const url =
@@ -115,15 +518,25 @@ async function fetchArxiv(topic, limit) {
 }
 
 async function fetchExternalPapers(topic, limit = 20) {
-  const [semanticResult, arxivResult] = await Promise.allSettled([
-    fetchSemanticScholar(topic, Math.min(limit, 20)),
-    fetchArxiv(topic, Math.min(limit, 20))
-  ]);
+  const queryProfile = classifyQuery(topic);
+  const candidateQueries = buildCandidateQueries(queryProfile);
+  const perQueryLimit = queryProfile.broadTopic ? Math.min(Math.max(limit, 5), 8) : Math.min(limit, 20);
 
-  const semanticItems = semanticResult.status === "fulfilled" ? semanticResult.value : [];
-  const arxivItems = arxivResult.status === "fulfilled" ? arxivResult.value : [];
+  const settledGroups = await Promise.all(
+    candidateQueries.map(async (query) => {
+      const [semanticResult, arxivResult] = await Promise.allSettled([
+        fetchSemanticScholar(query, perQueryLimit),
+        fetchArxiv(query, perQueryLimit)
+      ]);
 
-  const merged = [...semanticItems, ...arxivItems];
+      return [
+        ...(semanticResult.status === "fulfilled" ? semanticResult.value : []),
+        ...(arxivResult.status === "fulfilled" ? arxivResult.value : [])
+      ];
+    })
+  );
+
+  const merged = settledGroups.flat();
   const seen = new Set();
   const deduped = merged.filter((item) => {
     const key = `${item.title}`.toLowerCase().trim();
@@ -131,8 +544,35 @@ async function fetchExternalPapers(topic, limit = 20) {
     seen.add(key);
     return true;
   });
-
-  return deduped.slice(0, limit);
+  return deduped
+    .map((item) => {
+      const score = scoreSeedPaper(item, queryProfile);
+      const roleMeta = classifyPaperRole(item, queryProfile, { depth: 0 });
+      return {
+        ...item,
+        recommendationScore: Number(score.toFixed(2)),
+        matchReason: inferMatchReason(item, queryProfile),
+        role: roleMeta.role,
+        roleLabel: roleMeta.roleLabel,
+        roleReason: roleMeta.roleReason
+      };
+    })
+    .sort((left, right) => {
+      const scoreGap = right.recommendationScore - left.recommendationScore;
+      if (scoreGap !== 0) return scoreGap;
+      return String(left.title).localeCompare(String(right.title));
+    })
+    .slice(0, limit)
+    .map((item, index) =>
+      queryProfile.exactishTitle && index > 0 && item.role === "seed"
+        ? {
+            ...item,
+            role: "supporting",
+            roleLabel: "Supporting Paper",
+            roleReason: "This is related to the exact title you searched for, but it is not the main seed paper."
+          }
+        : item
+    );
 }
 
 async function fetchSemanticScholarPaper(identifier) {
@@ -238,25 +678,34 @@ function buildFallbackTree(paper) {
 }
 
 function buildGuide(nodes, rootNode) {
+  const queryProfile = classifyQuery(rootNode.query || rootNode.title || "");
   const ancestorNodes = nodes.filter((node) => node.id !== rootNode.id);
   const prioritized = ancestorNodes
     .slice()
-    .sort((left, right) => {
-      const depthScore = left.depth - right.depth;
-      if (depthScore !== 0) return depthScore;
-      return String(left.year || 9999).localeCompare(String(right.year || 9999));
-    })
+    .sort((left, right) => scoreAncestorNode(right, rootNode, queryProfile) - scoreAncestorNode(left, rootNode, queryProfile))
     .slice(0, 4)
-    .map((node, index) => ({
-      id: node.id,
-      title: node.title,
-      reason:
-        index === 0
-          ? "Best first background read before the seed paper"
-          : node.depth === 1
-            ? "Direct influence on the selected topic"
-            : "Earlier context to deepen understanding"
-    }));
+    .map((node, index) => {
+      const roleMeta = classifyPaperRole(node, queryProfile, { depth: node.depth, rootYear: rootNode.year });
+      return {
+        id: node.id,
+        title: node.title,
+        year: node.year ?? null,
+        role: roleMeta.role,
+        roleLabel: roleMeta.roleLabel,
+        reason:
+          index === 0
+            ? "Best first background read before the seed paper"
+            : roleMeta.role === "overview"
+              ? "Helpful overview that fills in missing context"
+              : roleMeta.role === "seminal"
+                ? "Foundational older work that likely shaped the area"
+                : node.depth === 1
+                  ? "Direct influence on the selected topic"
+                  : "Earlier context to deepen understanding"
+      };
+    });
+
+  const readingPlan = buildReadingPlan(prioritized, { queryProfile });
 
   return {
     title: `Start with ${rootNode.title}`,
@@ -264,7 +713,8 @@ function buildGuide(nodes, rootNode) {
       prioritized.length > 0
         ? `PaperTrail found earlier papers that likely shaped ${rootNode.title}. Read the top recommendations in order, then return to the seed paper with more context.`
         : `PaperTrail identified ${rootNode.title} as the best seed paper, but did not find enough cited ancestors to rank a fuller reading path yet.`,
-    recommendedOrder: prioritized
+    recommendedOrder: prioritized,
+    readingPlan
   };
 }
 
@@ -306,8 +756,10 @@ async function fetchAncestorTree(seedPaper, options = {}) {
 
     const rootNode = nodes[0] || {
       id: pickIdentifier(seedPaper) || "root",
-      title: seedPaper?.title || seedPaper?.query || "Selected paper"
+      title: seedPaper?.title || seedPaper?.query || "Selected paper",
+      year: seedPaper?.year ?? null
     };
+    rootNode.query = seedPaper?.query || seedPaper?.title || "";
 
     return {
       data: {
@@ -329,34 +781,27 @@ async function fetchAncestorTree(seedPaper, options = {}) {
 }
 
 async function searchPapersByQuery(query, limit = 20) {
-  const normalized = extractIdentifierFromQuery(query);
-  const [semanticItems, arxivItems] = await Promise.allSettled([
-    fetchSemanticScholar(normalized, Math.min(limit, 20)),
-    fetchArxiv(normalized, Math.min(limit, 20))
-  ]);
-
-  const merged = [
-    ...(semanticItems.status === "fulfilled" ? semanticItems.value : []),
-    ...(arxivItems.status === "fulfilled" ? arxivItems.value : [])
-  ];
-
-  if (merged.length > 0) {
-    const rawQuery = String(query || "").trim();
-    const matcher = rawQuery ? new RegExp(escapeRegExp(rawQuery), "i") : null;
-    merged.sort((left, right) => {
-      const leftMatches = matcher && matcher.test(left.title) ? 1 : 0;
-      const rightMatches = matcher && matcher.test(right.title) ? 1 : 0;
-      return rightMatches - leftMatches;
-    });
-  }
-
-  const seen = new Set();
-  return merged.filter((item) => {
-    const key = `${item.title}`.toLowerCase().trim();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).slice(0, limit);
+  const queryProfile = classifyQuery(query);
+  const results = await fetchExternalPapers(query, limit);
+  return {
+    data: results,
+    meta: {
+      readingPlan: buildReadingPlan(results, { queryProfile })
+    }
+  };
 }
 
-module.exports = { fetchExternalPapers: searchPapersByQuery, fetchAncestorTree };
+module.exports = {
+  fetchExternalPapers: searchPapersByQuery,
+  fetchAncestorTree,
+  __private: {
+    buildCandidateQueries,
+    buildGuide,
+    buildReadingPlan,
+    classifyQuery,
+    classifyPaperRole,
+    inferMatchReason,
+    scoreAncestorNode,
+    scoreSeedPaper
+  }
+};

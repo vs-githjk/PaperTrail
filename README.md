@@ -43,6 +43,9 @@ Example ancestor-tree request body:
 
 The ancestor-tree response also includes lightweight guide metadata so the frontend can explain what to read first, not just draw the graph.
 
+Progress across development passes is tracked in [PROJECT_PROGRESS.md](/Users/vidyutsriram/PaperTrail/PROJECT_PROGRESS.md:1).
+Practical local startup steps are documented in [RUN_INSTRUCTIONS.md](/Users/vidyutsriram/PaperTrail/RUN_INSTRUCTIONS.md:1).
+
 ## Local Setup
 
 ### 1. Install dependencies

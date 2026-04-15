@@ -130,6 +130,33 @@ button:disabled {
   line-height: 1.5;
 }
 
+.guide-plan,
+.plan-section {
+  display: grid;
+  gap: 8px;
+}
+
+.plan-section + .plan-section {
+  margin-top: 12px;
+}
+
+.plan-section p {
+  margin: 0;
+  color: #475569;
+}
+
+.plan-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.plan-list li {
+  display: grid;
+  gap: 2px;
+}
+
 .guide-list {
   margin: 0;
   padding-left: 18px;
