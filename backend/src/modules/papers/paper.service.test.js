@@ -32,14 +32,10 @@ function loadServiceWithMocks({ repositoryMock, externalMock }) {
   return service;
 }
 
-test("searchPapers persists external results when local lookup misses", async () => {
-  const saved = [];
+test("searchPapers returns external results when local lookup misses", async () => {
   const service = loadServiceWithMocks({
     repositoryMock: {
-      searchByText: async () => [],
-      saveMany: async (papers) => {
-        saved.push(...papers);
-      }
+      searchByText: async () => []
     },
     externalMock: {
       fetchExternalPapers: async () => ({
@@ -52,54 +48,38 @@ test("searchPapers persists external results when local lookup misses", async ()
   const result = await service.searchPapers("attention is all you need", 5);
 
   assert.equal(result.data.length, 1);
-  assert.equal(saved.length, 1);
-  assert.equal(saved[0].title, "Attention Is All You Need");
+  assert.equal(result.data[0].title, "Attention Is All You Need");
 });
 
-test("getAncestorTree persists the selected paper best-effort", async () => {
-  const savedSelections = [];
+test("savePaperForWorkspace persists a selected paper", async () => {
+  const saved = [];
   const service = loadServiceWithMocks({
     repositoryMock: {
       savePaper: async (paper) => {
-        savedSelections.push(paper);
-      },
-      saveResearchSession: async () => {}
+        saved.push(paper);
+      }
     },
     externalMock: {
       fetchExternalPapers: async () => ({ data: [] }),
-      fetchAncestorTree: async () => ({
-        data: {
-          nodes: [{ id: "paper-1" }, { id: "paper-2" }],
-          links: [{ source: "paper-1", target: "paper-2" }],
-          meta: {
-            guide: {
-              title: "Research path",
-              readingPlan: []
-            }
-          }
-        }
-      })
+      fetchAncestorTree: async () => ({})
     }
   });
 
-  await service.getAncestorTree({
+  const result = await service.savePaperForWorkspace({
     title: "Attention Is All You Need",
     paperId: "paper-1",
     query: "transformers"
   });
 
-  assert.equal(savedSelections.length, 1);
-  assert.equal(savedSelections[0].paperId, "paper-1");
+  assert.equal(result.data.saved, true);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].paperId, "paper-1");
 });
 
-test("getAncestorTree persists a research session with guide and graph stats", async () => {
-  const sessions = [];
+test("getAncestorTree returns graph without auto-saving session", async () => {
   const service = loadServiceWithMocks({
     repositoryMock: {
-      savePaper: async () => {},
-      saveResearchSession: async (session) => {
-        sessions.push(session);
-      }
+      saveResearchSession: async () => {}
     },
     externalMock: {
       fetchExternalPapers: async () => ({ data: [] }),
@@ -118,7 +98,7 @@ test("getAncestorTree persists a research session with guide and graph stats", a
     }
   });
 
-  await service.getAncestorTree({
+  const graph = await service.getAncestorTree({
     title: "Attention Is All You Need",
     paperId: "paper-1",
     query: "transformers",
@@ -126,11 +106,49 @@ test("getAncestorTree persists a research session with guide and graph stats", a
     roleLabel: "Seed Paper"
   });
 
+  assert.equal(Array.isArray(graph.data.nodes), true);
+  assert.equal(graph.data.nodes.length, 3);
+});
+
+test("saveResearchTrailForWorkspace persists session when requested", async () => {
+  const sessions = [];
+  const service = loadServiceWithMocks({
+    repositoryMock: {
+      saveResearchSession: async (session, userId) => {
+        sessions.push({ session, userId });
+      }
+    },
+    externalMock: {
+      fetchExternalPapers: async () => ({ data: [] }),
+      fetchAncestorTree: async () => ({})
+    }
+  });
+
+  const result = await service.saveResearchTrailForWorkspace({
+    query: "transformers",
+    selectedPaper: {
+      paperId: "paper-1",
+      title: "Attention Is All You Need",
+      roleLabel: "Seed Paper"
+    },
+    guide: {
+      title: "Research path"
+    },
+    graph: {
+      data: {
+        nodes: [{ id: "paper-1" }, { id: "paper-2" }],
+        links: [{ source: "paper-1", target: "paper-2" }]
+      }
+    }
+  }, 12);
+
+  assert.equal(result.data.saved, true);
   assert.equal(sessions.length, 1);
-  assert.equal(sessions[0].query, "transformers");
-  assert.equal(sessions[0].selectedPaper.title, "Attention Is All You Need");
-  assert.equal(sessions[0].guide.title, "Research path");
-  assert.equal(sessions[0].graphStats.nodeCount, 3);
+  assert.equal(sessions[0].userId, 12);
+  assert.equal(sessions[0].session.query, "transformers");
+  assert.equal(sessions[0].session.selectedPaper.title, "Attention Is All You Need");
+  assert.equal(sessions[0].session.guide.title, "Research path");
+  assert.equal(sessions[0].session.graphStats.nodeCount, 2);
 });
 
 test("getWorkspaceSnapshot returns recent papers and recent research together", async () => {

@@ -15,7 +15,7 @@ class PaperController {
     try {
       const query = String(req.query.q || "");
       const limit = Number(req.query.limit) || 20;
-      const papers = await paperService.searchPapers(query, limit);
+      const papers = await paperService.searchPapers(query, limit, req.user?.id || null);
       res.json(papers);
     } catch (error) {
       next(error);
@@ -25,7 +25,7 @@ class PaperController {
   async workspace(req, res, next) {
     try {
       const limit = Number(req.query.limit) || 6;
-      const workspace = await paperService.getWorkspaceSnapshot(limit);
+      const workspace = await paperService.getWorkspaceSnapshot(limit, req.user?.id || null);
       res.json(workspace);
     } catch (error) {
       next(error);
@@ -37,6 +37,36 @@ class PaperController {
       const payload = req.body && typeof req.body === "object" ? req.body : {};
       const graph = await paperService.getAncestorTree(payload);
       res.json(graph);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async save(req, res, next) {
+    try {
+      const payload = req.body && typeof req.body === "object" ? req.body : {};
+      const saved = await paperService.savePaperForWorkspace(payload);
+      res.status(201).json(saved);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async saveTrail(req, res, next) {
+    try {
+      const payload = req.body && typeof req.body === "object" ? req.body : {};
+      const saved = await paperService.saveResearchTrailForWorkspace(payload, req.user?.id || null);
+      res.status(201).json(saved);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async history(req, res, next) {
+    try {
+      const limit = Number(req.query.limit) || 20;
+      const history = await paperService.getHistory(limit, req.user?.id || null);
+      res.json(history);
     } catch (error) {
       next(error);
     }

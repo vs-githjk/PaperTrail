@@ -499,6 +499,33 @@ Turn the first persistence layer into an actual reusable workspace by storing re
 - The workspace UI is useful, but still basic compared with the guided-reading experience
 - Saved state is still local-only and best-effort when Postgres is unavailable
 
+## Pass 14: Workbench UX — Empty Tree, Auth-Gated Workspace, Sidebar Polish
+
+### Goal
+
+Align the workbench with clearer expectations: the ancestor graph should not show placeholder data until the user has chosen a paper, saved trails and papers should only appear in context of a logged-in account, and the sidebar should stay visually clean.
+
+### Changes Made
+
+- **Ancestor tree empty until selection:** Removed the mock seed/ancestor nodes used when the API returned no graph. On first load (or before a tree exists), the right panel shows an empty state with guidance to click a result paper or use **Build Tree From Top Match**; the force graph mounts only when normalized graph data has at least one node. Focal and insight copy match empty vs. loaded states.
+- **Workspace lists tied to login:** **Recent Research Trails** and **Recently Saved Papers** no longer render trail or paper cards for logged-out users. Sidebar shows short login prompts instead. Workspace fetching (`loadWorkspace`, `refreshWorkspace`) runs only when an auth token is present; logout clears workspace state immediately so nothing leaks across sessions.
+- **Sidebar heading cleanup:** Removed the decorative **+** next to the **Recent Research Trails** heading.
+
+### Key Files
+
+- [client/src/components/AncestorTree.tsx](client/src/components/AncestorTree.tsx)
+- [client/src/styles.css](client/src/styles.css)
+- [client/src/App.jsx](client/src/App.jsx)
+
+### Verification
+
+- Manual UX check: logged-out visit shows empty ancestor guidance and no saved cards; after login, workspace lists populate from `GET /api/workspace` when data exists; paper click or top-match build shows the real graph.
+- Frontend production build: `npm run build` (client).
+
+### Remaining Weaknesses
+
+- Deployment hardening (CORS, authenticated writes, disabling risky in-memory fallbacks in production) is still recommended before a public launch; see separate deployment review.
+
 ## Current State
 
 What is working well now:
@@ -508,6 +535,7 @@ What is working well now:
 - The ranking layer is better than raw API output
 - The backend has its first real test coverage
 - The app now has the beginnings of a reusable research workspace
+- The workbench ancestor panel and sidebar behavior respect empty-state and login boundaries
 
 What still needs work:
 - Better topic-intent reranking

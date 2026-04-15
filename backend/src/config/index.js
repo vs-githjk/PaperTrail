@@ -8,7 +8,8 @@ const config = {
     port: Number(process.env.POSTGRES_PORT) || 5432,
     database: process.env.POSTGRES_DB || "research_genealogy",
     user: process.env.POSTGRES_USER || "app_user",
-    password: process.env.POSTGRES_PASSWORD || "app_password"
+    password: process.env.POSTGRES_PASSWORD || "app_password",
+    connectionTimeoutMillis: Number(process.env.POSTGRES_CONNECT_TIMEOUT_MS) || 1500
   },
   neo4j: {
     uri: process.env.NEO4J_URI || "bolt://localhost:7687",
@@ -18,6 +19,9 @@ const config = {
   redis: {
     host: process.env.REDIS_HOST || "localhost",
     port: Number(process.env.REDIS_PORT) || 6379
+  },
+  auth: {
+    sessionTtlHours: Number(process.env.AUTH_SESSION_TTL_HOURS) || 168
   }
 };
 

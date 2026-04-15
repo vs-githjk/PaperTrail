@@ -6,7 +6,7 @@ class PaperService {
     return paperRepository.list(limit);
   }
 
-  async getWorkspaceSnapshot(limit) {
+  async getWorkspaceSnapshot(limit, userId = null) {
     const normalizedLimit = Number(limit) > 0 ? Number(limit) : 6;
 
     const fallback = {
@@ -17,9 +17,14 @@ class PaperService {
     };
 
     try {
+      const recentPapersPromise = paperRepository.list(normalizedLimit);
+      const recentResearchPromise = userId
+        ? paperRepository.listResearchSessionsByUser(userId, normalizedLimit)
+        : paperRepository.listResearchSessions(normalizedLimit);
+
       const [recentPapers, recentResearch] = await Promise.all([
-        paperRepository.list(normalizedLimit),
-        paperRepository.listResearchSessions(normalizedLimit)
+        recentPapersPromise,
+        recentResearchPromise
       ]);
 
       return {
@@ -33,10 +38,19 @@ class PaperService {
     }
   }
 
-  async searchPapers(searchText, limit) {
+  async searchPapers(searchText, limit, userId = null) {
     if (!searchText || !searchText.trim()) return [];
     const normalizedLimit = Number(limit) > 0 ? Number(limit) : 20;
     const query = searchText.trim();
+
+    if (userId) {
+      try {
+        await paperRepository.saveUserSearch(userId, query);
+      } catch (error) {
+        // Search history persistence is best-effort.
+      }
+    }
+
     try {
       const localMatches = await paperRepository.searchByText(query, normalizedLimit);
       if (localMatches.length > 0) return localMatches;
@@ -44,14 +58,7 @@ class PaperService {
       // Local DB may be unavailable during early local setup.
     }
 
-    const externalResults = await fetchExternalPapers(query, normalizedLimit);
-    try {
-      await paperRepository.saveMany(externalResults.data || []);
-    } catch (error) {
-      // Persistence is best-effort during local setup.
-    }
-
-    return externalResults;
+    return fetchExternalPapers(query, normalizedLimit);
   }
 
   async getAncestorTree(selection) {
@@ -67,37 +74,74 @@ class PaperService {
       maxNodes: selection.maxNodes
     });
 
-    try {
-      await paperRepository.savePaper(selection);
-    } catch (error) {
-      // Persistence is best-effort during local setup.
-    }
-
-    try {
-      await paperRepository.saveResearchSession({
-        query: selection.query,
-        selectedPaper: {
-          paperId: selection.paperId || selection.externalId || selection.id || null,
-          title: selection.title || "Untitled paper",
-          year: Number.isFinite(Number(selection.year)) ? Number(selection.year) : null,
-          doi: selection.doi || null,
-          externalId: selection.externalId || selection.paperId || selection.id || null,
-          source: selection.source || null,
-          authors: Array.isArray(selection.authors) ? selection.authors : [],
-          role: selection.role || null,
-          roleLabel: selection.roleLabel || null
-        },
-        guide: graph?.data?.meta?.guide || graph?.meta?.guide || {},
-        graphStats: {
-          nodeCount: Array.isArray(graph?.data?.nodes) ? graph.data.nodes.length : 0,
-          linkCount: Array.isArray(graph?.data?.links) ? graph.data.links.length : 0
-        }
-      });
-    } catch (error) {
-      // Persistence is best-effort during local setup.
-    }
-
     return graph;
+  }
+
+  async savePaperForWorkspace(paper) {
+    if (!paper || typeof paper !== "object") {
+      const error = new Error("A paper payload is required.");
+      error.status = 400;
+      throw error;
+    }
+
+    await paperRepository.savePaper(paper);
+    return { data: { saved: true } };
+  }
+
+  async saveResearchTrailForWorkspace(payload, userId = null) {
+    if (!payload || typeof payload !== "object") {
+      const error = new Error("A research trail payload is required.");
+      error.status = 400;
+      throw error;
+    }
+
+    const selectedPaper = payload?.selectedPaper && typeof payload.selectedPaper === "object"
+      ? payload.selectedPaper
+      : payload?.paper && typeof payload.paper === "object"
+        ? payload.paper
+        : {};
+
+    const graph = payload?.graph && typeof payload.graph === "object" ? payload.graph : {};
+
+    await paperRepository.saveResearchSession({
+      query: typeof payload?.query === "string" ? payload.query : "",
+      selectedPaper: {
+        paperId: selectedPaper.paperId || selectedPaper.externalId || selectedPaper.id || null,
+        title: selectedPaper.title || "Untitled paper",
+        year: Number.isFinite(Number(selectedPaper.year)) ? Number(selectedPaper.year) : null,
+        doi: selectedPaper.doi || null,
+        externalId: selectedPaper.externalId || selectedPaper.paperId || selectedPaper.id || null,
+        source: selectedPaper.source || null,
+        authors: Array.isArray(selectedPaper.authors) ? selectedPaper.authors : [],
+        role: selectedPaper.role || null,
+        roleLabel: selectedPaper.roleLabel || null
+      },
+      guide: payload?.guide && typeof payload.guide === "object"
+        ? payload.guide
+        : graph?.data?.meta?.guide || graph?.meta?.guide || {},
+      graphStats: {
+        nodeCount: Array.isArray(graph?.data?.nodes) ? graph.data.nodes.length : 0,
+        linkCount: Array.isArray(graph?.data?.links) ? graph.data.links.length : 0
+      }
+    }, userId);
+
+    return { data: { saved: true } };
+  }
+
+  async getHistory(limit, userId) {
+    if (!userId) {
+      const error = new Error("Unauthorized");
+      error.status = 401;
+      throw error;
+    }
+
+    const normalizedLimit = Number(limit) > 0 ? Number(limit) : 20;
+    try {
+      const searches = await paperRepository.listUserSearchesByUser(userId, normalizedLimit);
+      return { data: searches };
+    } catch (error) {
+      return { data: [] };
+    }
   }
 }
 

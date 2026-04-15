@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PaperTrail | Semi-Agentic Knowledge Workbench</title>
+<!-- Google Fonts: Manrope & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-variant": "#dbe4e7",
+                      "on-tertiary": "#ecffdd",
+                      "on-secondary-fixed": "#354052",
+                      "inverse-on-surface": "#9b9d9e",
+                      "on-primary-fixed": "#254067",
+                      "on-error": "#fff7f6",
+                      "surface-container-low": "#f1f4f6",
+                      "surface-container-high": "#e3e9ec",
+                      "on-primary-fixed-variant": "#425c85",
+                      "error": "#9f403d",
+                      "on-background": "#2b3437",
+                      "on-secondary-fixed-variant": "#515c6f",
+                      "primary-fixed-dim": "#bfd5ff",
+                      "secondary-fixed": "#d8e3fa",
+                      "surface-dim": "#d1dce0",
+                      "secondary-dim": "#495467",
+                      "secondary-container": "#d8e3fa",
+                      "error-container": "#fe8983",
+                      "on-secondary": "#f8f8ff",
+                      "tertiary": "#526448",
+                      "outline-variant": "#abb3b7",
+                      "tertiary-fixed-dim": "#cee3c0",
+                      "on-tertiary-container": "#4a5c40",
+                      "secondary": "#546073",
+                      "on-surface-variant": "#586064",
+                      "surface-container-lowest": "#ffffff",
+                      "outline": "#737c7f",
+                      "surface-bright": "#f8f9fa",
+                      "inverse-surface": "#0c0f10",
+                      "surface": "#f8f9fa",
+                      "on-secondary-container": "#475265",
+                      "inverse-primary": "#b3cdfd",
+                      "on-primary": "#f6f7ff",
+                      "surface-tint": "#455f88",
+                      "on-tertiary-fixed": "#38492f",
+                      "primary-fixed": "#d6e3ff",
+                      "tertiary-dim": "#46583d",
+                      "error-dim": "#4e0309",
+                      "primary-container": "#d6e3ff",
+                      "surface-container-highest": "#dbe4e7",
+                      "primary-dim": "#39537c",
+                      "secondary-fixed-dim": "#cad5ec",
+                      "on-primary-container": "#38527b",
+                      "tertiary-fixed": "#ddf2ce",
+                      "background": "#f8f9fa",
+                      "tertiary-container": "#ddf2ce",
+                      "on-error-container": "#752121",
+                      "on-tertiary-fixed-variant": "#54664a",
+                      "on-surface": "#2b3437",
+                      "surface-container": "#eaeff1",
+                      "primary": "#455f88"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "fontFamily": {
+                      "headline": ["Manrope", "sans-serif"],
+                      "body": ["Inter", "sans-serif"],
+                      "label": ["Inter", "sans-serif"]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar (Shared Component Identity) -->
+<header class="fixed top-0 z-50 w-full px-6 h-16 flex justify-between items-center bg-[#f8f9fa] dark:bg-slate-950/80 backdrop-blur-xl shadow-[0_40px_60px_-15px_rgba(43,52,55,0.05)]">
+<!-- Brand & Center Search -->
+<div class="flex items-center gap-8 flex-1">
+<span class="text-xl font-bold font-headline text-[#2b3437] dark:text-white tracking-tight">PaperTrail</span>
+<div class="hidden md:flex flex-1 max-w-md relative group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none" data-icon="search">search</span>
+<input class="w-full h-10 pl-11 pr-4 bg-surface-container-highest border-none rounded-full text-sm font-medium focus:ring-2 focus:ring-primary/40 transition-all" placeholder="Search knowledge..." type="text" value="quantum mechanics"/>
+</div>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-6">
+<nav class="flex items-center gap-6 text-sm font-medium">
+<a class="text-[#455f88] dark:text-[#d6e3ff] border-b-2 border-[#455f88] h-16 flex items-center" href="#">History</a>
+<span class="text-outline-variant select-none">Logged in as adithya</span>
+<button class="text-[#2b3437]/60 hover:text-[#455f88] transition-colors">Log out</button>
+</nav>
+<div class="flex items-center gap-3 ml-2">
+<button class="p-2 rounded-full hover:bg-[#f1f4f6] transition-colors"><span class="material-symbols-outlined text-on-surface-variant" data-icon="notifications">notifications</span></button>
+<button class="p-2 rounded-full hover:bg-[#f1f4f6] transition-colors"><span class="material-symbols-outlined text-on-surface-variant" data-icon="settings">settings</span></button>
+</div>
+</div>
+</header>
+<main class="pt-16 min-h-screen flex">
+<!-- Column 1: Workspace Memory -->
+<aside class="w-72 bg-surface-container-low p-6 flex flex-col gap-8 shrink-0 overflow-y-auto">
+<!-- Recent Research Trails -->
+<section>
+<div class="flex items-center justify-between mb-4">
+<h2 class="text-xs font-bold font-label uppercase tracking-widest text-on-surface-variant">Recent Research Trails</h2>
+<button class="w-6 h-6 flex items-center justify-center rounded-md bg-white shadow-sm hover:scale-95 transition-transform">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span>
+</button>
+</div>
+<ul class="space-y-1">
+<li class="flex items-center gap-3 p-2 rounded-lg bg-white shadow-sm text-sm font-medium text-primary">
+<span class="material-symbols-outlined text-lg" data-icon="timeline">timeline</span>
+<span class="truncate">Quantum Gravity Core</span>
+</li>
+<li class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/50 transition-colors text-sm text-on-surface-variant">
+<span class="material-symbols-outlined text-lg" data-icon="hub">hub</span>
+<span class="truncate">Neural Network Arch...</span>
+</li>
+<li class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/50 transition-colors text-sm text-on-surface-variant">
+<span class="material-symbols-outlined text-lg" data-icon="waves">waves</span>
+<span class="truncate">Fluid Dynamics 2024</span>
+</li>
+</ul>
+</section>
+<!-- Recently Saved Papers -->
+<section>
+<h2 class="text-xs font-bold font-label uppercase tracking-widest text-on-surface-variant mb-4">Recently Saved Papers</h2>
+<ul class="space-y-3">
+<li class="group cursor-pointer">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-primary-dim mt-0.5" data-icon="description">description</span>
+<div>
+<p class="text-sm font-medium leading-snug group-hover:text-primary transition-colors">On the Electrodynamics of Moving Bodies</p>
+<p class="text-[10px] text-outline mt-1 uppercase tracking-tighter">Einstein, A. • 1905</p>
+</div>
+</div>
+</li>
+<li class="group cursor-pointer">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-primary-dim mt-0.5" data-icon="description">description</span>
+<div>
+<p class="text-sm font-medium leading-snug group-hover:text-primary transition-colors">The Quantum Theory of Fields</p>
+<p class="text-[10px] text-outline mt-1 uppercase tracking-tighter">Weinberg, S. • 1995</p>
+</div>
+</div>
+</li>
+</ul>
+</section>
+</aside>
+<!-- Column 2: Action Canvas -->
+<div class="flex-1 bg-surface p-8 overflow-y-auto">
+<header class="mb-10">
+<div class="inline-block px-3 py-1 bg-primary-container text-on-primary-container text-[10px] font-bold tracking-widest uppercase rounded-full mb-4">AI Suggested Reading Path</div>
+<h1 class="text-4xl font-extrabold font-headline text-on-surface tracking-tight max-w-2xl">Read these first to get oriented quickly</h1>
+</header>
+<!-- Paper Cards List -->
+<div class="space-y-6 max-w-3xl">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] group hover:shadow-[0_20px_50px_rgba(43,52,55,0.08)] transition-all duration-300">
+<div class="flex justify-between items-start mb-4">
+<span class="px-2.5 py-1 bg-tertiary-container text-on-tertiary-container text-[10px] font-bold rounded-md flex items-center gap-1.5">
+<span class="material-symbols-outlined text-xs" data-icon="auto_awesome" data-weight="fill" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+                            START HERE - DEFINES CORE TERMINOLOGY
+                        </span>
+<span class="text-xs text-outline font-medium">98% Match</span>
+</div>
+<h3 class="text-xl font-bold font-headline mb-2 leading-tight group-hover:text-primary transition-colors">Bohmian Mechanics as the Foundation of Quantum Probability</h3>
+<p class="text-sm text-on-surface-variant mb-6 line-clamp-2">This paper explores how the pilot-wave interpretation provides a deterministic framework for understanding quantum fluctuations in chaotic systems.</p>
+<div class="flex items-center justify-between border-t border-surface-container-low pt-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center">
+<span class="material-symbols-outlined text-sm text-outline" data-icon="person">person</span>
+</div>
+<div>
+<p class="text-xs font-semibold">Dr. Julian Vance</p>
+<p class="text-[10px] text-outline">Oct 2023 • 24 Citations</p>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:bg-primary-dim transition-colors shadow-sm">Promote to Seed Paper</button>
+<button class="px-4 py-2 bg-secondary-container text-on-secondary-container text-xs font-bold rounded-lg hover:bg-surface-container-high transition-colors">Branch Exploration</button>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] group hover:shadow-[0_20px_50px_rgba(43,52,55,0.08)] transition-all duration-300">
+<div class="flex justify-between items-start mb-4">
+<span class="px-2.5 py-1 bg-surface-container-high text-on-surface-variant text-[10px] font-bold rounded-md flex items-center gap-1.5">
+<span class="material-symbols-outlined text-xs" data-icon="link">link</span>
+                            EMPIRICAL CONTEXT
+                        </span>
+<span class="text-xs text-outline font-medium">85% Match</span>
+</div>
+<h3 class="text-xl font-bold font-headline mb-2 leading-tight group-hover:text-primary transition-colors">Experimental Evidence for Non-Local Correlations</h3>
+<p class="text-sm text-on-surface-variant mb-6 line-clamp-2">A comprehensive review of the 2022 Bell Test experiments and their implications for pilot-wave theories and local realism.</p>
+<div class="flex items-center justify-between border-t border-surface-container-low pt-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center">
+<span class="material-symbols-outlined text-sm text-outline" data-icon="person">person</span>
+</div>
+<div>
+<p class="text-xs font-semibold">Sarah L. Chen</p>
+<p class="text-[10px] text-outline">Jan 2024 • 12 Citations</p>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:bg-primary-dim transition-colors shadow-sm">Promote to Seed Paper</button>
+<button class="px-4 py-2 bg-secondary-container text-on-secondary-container text-xs font-bold rounded-lg hover:bg-surface-container-high transition-colors">Branch Exploration</button>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] group hover:shadow-[0_20px_50px_rgba(43,52,55,0.08)] transition-all duration-300 opacity-60">
+<div class="flex justify-between items-start mb-4">
+<span class="px-2.5 py-1 bg-surface-container-high text-on-surface-variant text-[10px] font-bold rounded-md flex items-center gap-1.5">
+<span class="material-symbols-outlined text-xs" data-icon="history">history</span>
+                            HISTORICAL FOUNDATION
+                        </span>
+</div>
+<h3 class="text-xl font-bold font-headline mb-2 leading-tight">Weak Measurements and the Pilot-Wave Trajectory</h3>
+<div class="flex gap-2 mt-6">
+<button class="px-4 py-2 bg-surface-container-high text-on-surface-variant text-xs font-bold rounded-lg">View Summary</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Column 3: Tree Preview -->
+<aside class="w-80 border-l border-surface-container-low bg-surface-container-lowest p-6 overflow-hidden flex flex-col">
+<button class="w-full py-4 bg-primary text-on-primary rounded-xl font-bold font-headline flex items-center justify-center gap-2 hover:bg-primary-dim transition-all shadow-[0_10px_20px_rgba(69,95,136,0.2)] mb-8 active:scale-95 duration-200 ease-out">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+                Build Tree From Top Match
+            </button>
+<div class="flex-1 flex flex-col">
+<div class="flex items-center justify-between mb-4">
+<h2 class="text-xs font-bold font-label uppercase tracking-widest text-on-surface-variant">Ancestor Tree</h2>
+<span class="material-symbols-outlined text-outline-variant" data-icon="fullscreen">fullscreen</span>
+</div>
+<!-- Abstract Node-Link Diagram Placeholder -->
+<div class="flex-1 relative rounded-2xl bg-surface-container-low border-2 border-dashed border-outline-variant/20 overflow-hidden flex items-center justify-center group">
+<!-- The "Abstract Diagram" using UI elements -->
+<div class="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent"></div>
+<div class="relative w-full h-full p-8">
+<!-- Simulated Nodes -->
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-[0_0_20px_rgba(69,95,136,0.4)] z-10"></div>
+<div class="absolute top-1/4 left-1/3 w-3 h-3 bg-tertiary rounded-full opacity-60"></div>
+<div class="absolute top-1/3 right-1/4 w-3 h-3 bg-secondary rounded-full opacity-60"></div>
+<div class="absolute bottom-1/4 left-1/4 w-3 h-3 bg-primary-dim rounded-full opacity-60"></div>
+<div class="absolute bottom-1/3 right-1/3 w-3 h-3 bg-outline rounded-full opacity-60"></div>
+<!-- Simulated Links (SVG) -->
+<svg class="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+<line opacity="0.3" stroke="#455f88" stroke-dasharray="4 4" stroke-width="1.5" x1="50%" x2="33%" y1="50%" y2="25%"></line>
+<line opacity="0.3" stroke="#455f88" stroke-dasharray="4 4" stroke-width="1.5" x1="50%" x2="75%" y1="50%" y2="33%"></line>
+<line opacity="0.3" stroke="#455f88" stroke-dasharray="4 4" stroke-width="1.5" x1="50%" x2="25%" y1="50%" y2="75%"></line>
+<line opacity="0.3" stroke="#455f88" stroke-dasharray="4 4" stroke-width="1.5" x1="50%" x2="66%" y1="50%" y2="66%"></line>
+</svg>
+<div class="absolute inset-0 flex items-center justify-center bg-surface-container-low/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity">
+<p class="text-[10px] font-bold text-primary uppercase tracking-widest bg-white px-3 py-1.5 rounded-full shadow-sm">Previewing lineage...</p>
+</div>
+</div>
+<!-- Ambient Shadow styling from Design System -->
+<div class="absolute bottom-4 left-4 right-4 p-4 glass-panel rounded-xl border border-white/40 shadow-[0_40px_60px_-15px_rgba(43,52,55,0.05)]">
+<p class="text-[10px] font-semibold text-outline mb-1 uppercase tracking-tighter">Current Focal Node</p>
+<p class="text-xs font-bold leading-tight">Quantum Potential &amp; Active Information</p>
+</div>
+</div>
+<div class="mt-6 p-4 rounded-xl bg-primary-container/30 border border-primary-container">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-primary text-lg" data-icon="lightbulb">lightbulb</span>
+<div>
+<p class="text-xs font-bold text-on-primary-container">Knowledge Insight</p>
+<p class="text-[11px] text-on-primary-container/80 mt-1 leading-relaxed">3 related branches found in the 'Archive' section. Building the tree will merge these nodes.</p>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</main>
+<!-- FAB for quick AI query (Contextual Suppressed on Details usually, but active here for main workbench) -->
+<button class="fixed bottom-8 right-8 w-14 h-14 bg-[#2b3437] text-white rounded-full flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all group z-[100]">
+<span class="material-symbols-outlined" data-icon="chat_bubble" data-weight="fill" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+<div class="absolute right-16 px-4 py-2 bg-[#2b3437] text-white text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            Ask Research Agent
+        </div>
+</button>
+</body></html>
