@@ -499,6 +499,54 @@ Turn the first persistence layer into an actual reusable workspace by storing re
 - The workspace UI is useful, but still basic compared with the guided-reading experience
 - Saved state is still local-only and best-effort when Postgres is unavailable
 
+## Pass 14: Merge And Deployment Prep
+
+### Goal
+
+Bring your friend’s ahead-of-branch product work into `vids-branch`, verify the merged app, and prepare the repo for a first real deployment.
+
+### Changes Made
+
+- Fast-forward merged `origin/adi's-branch()` into `vids-branch`
+- Brought in:
+  - auth flows
+  - saved history
+  - workbench UI improvements
+  - ancestor tree empty-state and interaction changes
+- Installed and verified the new frontend dependency set needed by the merged branch
+- Added deployment-oriented backend config support for:
+  - `DATABASE_URL`
+  - `POSTGRES_SSL`
+  - `REDIS_URL`
+  - `CORS_ORIGIN`
+- Added a Render blueprint in [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1)
+- Added a deployment guide in [DEPLOYMENT.md](/Users/vidyutsriram/PaperTrail/DEPLOYMENT.md:1)
+- Added a repo-level Node version pin with [.node-version](/Users/vidyutsriram/PaperTrail/.node-version:1)
+
+### Key Files
+
+- [backend/src/config/index.js](/Users/vidyutsriram/PaperTrail/backend/src/config/index.js:1)
+- [backend/src/app.js](/Users/vidyutsriram/PaperTrail/backend/src/app.js:1)
+- [backend/src/db/redis.js](/Users/vidyutsriram/PaperTrail/backend/src/db/redis.js:1)
+- [backend/.env.example](/Users/vidyutsriram/PaperTrail/backend/.env.example:1)
+- [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1)
+- [DEPLOYMENT.md](/Users/vidyutsriram/PaperTrail/DEPLOYMENT.md:1)
+- [README.md](/Users/vidyutsriram/PaperTrail/README.md:1)
+
+### Verification
+
+- `git merge --ff-only "origin/adi's-branch()"` completed cleanly
+- Backend tests passed with `npm test`
+- Frontend production build passed with `npm run build`
+- Confirmed the merged frontend dependency issue was resolved by installing the new package set
+
+### Remaining Weaknesses
+
+- The app is deployment-ready, but not yet actually deployed
+- Redis and Neo4j are still optional and not yet represented as first-class managed production services
+- CORS still needs to be set to the final frontend URL during deployment
+- We still need one full live-production smoke test after deployment
+
 ## Pass 14: Workbench UX — Empty Tree, Auth-Gated Workspace, Sidebar Polish
 
 ### Goal
@@ -535,6 +583,8 @@ What is working well now:
 - The ranking layer is better than raw API output
 - The backend has its first real test coverage
 - The app now has the beginnings of a reusable research workspace
+- The merged branch now includes auth and a fuller workbench experience
+- The repo has a first-pass deployment path
 - The workbench ancestor panel and sidebar behavior respect empty-state and login boundaries
 
 What still needs work:
@@ -543,14 +593,15 @@ What still needs work:
 - Deeper persistence of papers, trails, and graph state
 - Stronger graph modeling in Neo4j
 - More test coverage across backend and frontend
+- A full live deployment and production smoke test
 
 ## Next Best Step
 
-The next pass should focus on richer saved-trail quality:
-- persist more of the generated graph state so returning to a session feels instant
-- let users pin or name a research trail instead of only relying on recency
-- improve the workspace UI so saved sessions include clearer reading-plan previews
-- start deciding which state belongs in Postgres versus Neo4j
+The next pass should focus on the actual live deployment:
+- create the Render blueprint stack
+- set the final frontend and backend URLs
+- verify auth, search, tree generation, save-paper, and save-trail flows in production
+- decide whether Redis and Neo4j belong in the first public environment or a later infrastructure pass
 
 ## Update Rule
 

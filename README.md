@@ -47,6 +47,7 @@ The workspace endpoint returns recent saved papers plus recent research trails s
 
 Progress across development passes is tracked in [PROJECT_PROGRESS.md](/Users/vidyutsriram/PaperTrail/PROJECT_PROGRESS.md:1).
 Practical local startup steps are documented in [RUN_INSTRUCTIONS.md](/Users/vidyutsriram/PaperTrail/RUN_INSTRUCTIONS.md:1).
+Deployment setup is documented in [DEPLOYMENT.md](/Users/vidyutsriram/PaperTrail/DEPLOYMENT.md:1).
 
 ## Local Setup
 
@@ -87,6 +88,14 @@ npm run dev
 ```
 
 The frontend defaults to `http://localhost:5173` and the backend to `http://localhost:4000`.
+
+## Deployment
+
+The repo now includes first-pass Render deployment support:
+- [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1) for a static frontend, Node backend, and managed Postgres
+- [DEPLOYMENT.md](/Users/vidyutsriram/PaperTrail/DEPLOYMENT.md:1) for environment setup and smoke-test steps
+
+The backend also supports managed-service env vars such as `DATABASE_URL`, `POSTGRES_SSL`, `REDIS_URL`, and `CORS_ORIGIN`.
 
 ## Near-Term Roadmap
 

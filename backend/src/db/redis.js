@@ -1,14 +1,20 @@
 const Redis = require("ioredis");
 const config = require("../config");
 
-const redisClient = new Redis({
-  host: config.redis.host,
-  port: config.redis.port,
+const baseRedisOptions = {
   lazyConnect: true,
   maxRetriesPerRequest: 1,
   connectTimeout: 1000,
   retryStrategy: null
-});
+};
+
+const redisClient = config.redis.url
+  ? new Redis(config.redis.url, baseRedisOptions)
+  : new Redis({
+      host: config.redis.host,
+      port: config.redis.port,
+      ...baseRedisOptions
+    });
 
 let hasWarnedAboutRedis = false;
 
