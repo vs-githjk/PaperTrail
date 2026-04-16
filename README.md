@@ -91,9 +91,10 @@ The frontend defaults to `http://localhost:5173` and the backend to `http://loca
 
 ## Deployment
 
-The repo now includes first-pass Render deployment support:
-- [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1) for a static frontend, Node backend, and managed Postgres
-- [DEPLOYMENT.md](/Users/vidyutsriram/PaperTrail/DEPLOYMENT.md:1) for environment setup and smoke-test steps
+The repo now includes first-pass deployment support for:
+- Render backend + managed Postgres via [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1)
+- Vercel frontend with SPA rewrites via [client/vercel.json](/Users/vidyutsriram/PaperTrail/client/vercel.json:1)
+- environment setup and smoke-test steps in [DEPLOYMENT.md](/Users/vidyutsriram/PaperTrail/DEPLOYMENT.md:1)
 
 The backend also supports managed-service env vars such as `DATABASE_URL`, `POSTGRES_SSL`, `REDIS_URL`, and `CORS_ORIGIN`.
 

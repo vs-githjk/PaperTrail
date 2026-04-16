@@ -1,32 +1,37 @@
 # Deployment Guide
 
-This repo is now prepared for a first deployment on Render.
+This repo is now prepared for a first deployment split across Render and Vercel.
 
 The simplest production shape for PaperTrail right now is:
-- a Render static site for the React frontend
+- a Vercel project for the React frontend
 - a Render web service for the Express backend
 - a Render Postgres database for auth, saved papers, and saved research trails
 
 Redis and Neo4j are still optional. The app can start without them, and the backend already degrades gracefully when they are unavailable.
 
-## Recommended First Deploy
+## Recommended Hosting Split
 
-Use the included [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1) blueprint.
+Use:
+- [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1) for the backend and Postgres on Render
+- [client/vercel.json](/Users/vidyutsriram/PaperTrail/client/vercel.json:1) for safe SPA rewrites on Vercel
 
-It provisions:
+The Render blueprint provisions:
 - `papertrail-api`
-- `papertrail-web`
 - `papertrail-db`
 
-## Before You Create The Blueprint
+## Before You Deploy
 
 Make sure the branch you want to deploy is pushed to GitHub.
 
-You will need to provide a few values during setup:
+You will need:
+- a Render backend URL, such as `https://papertrail-api.onrender.com`
+- a Vercel frontend URL, such as `https://papertrail.vercel.app`
+
+You will provide these values during setup:
 - `CORS_ORIGIN`
-  Set this to your frontend URL, such as `https://papertrail-web.onrender.com`
+  Set this to your Vercel frontend URL
 - `VITE_API_BASE`
-  Set this to your backend URL, such as `https://papertrail-api.onrender.com`
+  Set this to your Render backend URL
 - `REDIS_URL`
   Optional
 - `NEO4J_URI`
@@ -44,12 +49,24 @@ For a first deployment, it is fine to leave Redis and Neo4j unset.
 2. Let Render read [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1).
 3. When prompted, fill in:
    - `CORS_ORIGIN`
-   - `VITE_API_BASE`
    - any optional Redis or Neo4j values you want to use
 4. Deploy the stack.
-5. Once the static site and API URLs exist, double-check:
-   - the frontend points to the backend URL
-   - the backend allows the frontend origin in `CORS_ORIGIN`
+
+Do not finalize `CORS_ORIGIN` until you know the real Vercel frontend URL.
+
+## Vercel Setup Steps
+
+According to Vercel’s Vite docs, a Vite app can be deployed directly as a Vercel project, and environment variables are configured per project in the dashboard.
+
+1. In Vercel, import this repository as a new project.
+2. Set the project Root Directory to `client`.
+3. Confirm the framework is Vite.
+4. Add:
+   - `VITE_API_BASE`
+     Set this to your Render backend URL, such as `https://papertrail-api.onrender.com`
+5. Deploy the frontend.
+6. Copy the deployed frontend URL.
+7. Back in Render, set `CORS_ORIGIN` on `papertrail-api` to that exact frontend origin and redeploy the backend.
 
 ## Environment Notes
 
@@ -60,6 +77,9 @@ The backend now supports:
 - `REDIS_URL`
 
 That means you can deploy against managed services without translating everything into localhost-style fields.
+
+The frontend uses:
+- `VITE_API_BASE`
 
 ## Health Check
 

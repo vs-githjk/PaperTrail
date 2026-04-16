@@ -520,6 +520,10 @@ Bring your friend’s ahead-of-branch product work into `vids-branch`, verify th
   - `REDIS_URL`
   - `CORS_ORIGIN`
 - Added a Render blueprint in [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1)
+- Refined deployment support around the intended hosting split:
+  - Render for the backend and Postgres
+  - Vercel for the frontend
+- Added a Vercel SPA config in [client/vercel.json](/Users/vidyutsriram/PaperTrail/client/vercel.json:1)
 - Added a deployment guide in [DEPLOYMENT.md](/Users/vidyutsriram/PaperTrail/DEPLOYMENT.md:1)
 - Added a repo-level Node version pin with [.node-version](/Users/vidyutsriram/PaperTrail/.node-version:1)
 
@@ -530,6 +534,7 @@ Bring your friend’s ahead-of-branch product work into `vids-branch`, verify th
 - [backend/src/db/redis.js](/Users/vidyutsriram/PaperTrail/backend/src/db/redis.js:1)
 - [backend/.env.example](/Users/vidyutsriram/PaperTrail/backend/.env.example:1)
 - [render.yaml](/Users/vidyutsriram/PaperTrail/render.yaml:1)
+- [client/vercel.json](/Users/vidyutsriram/PaperTrail/client/vercel.json:1)
 - [DEPLOYMENT.md](/Users/vidyutsriram/PaperTrail/DEPLOYMENT.md:1)
 - [README.md](/Users/vidyutsriram/PaperTrail/README.md:1)
 
@@ -598,7 +603,8 @@ What still needs work:
 ## Next Best Step
 
 The next pass should focus on the actual live deployment:
-- create the Render blueprint stack
+- create the Render backend stack
+- deploy the Vercel frontend project
 - set the final frontend and backend URLs
 - verify auth, search, tree generation, save-paper, and save-trail flows in production
 - decide whether Redis and Neo4j belong in the first public environment or a later infrastructure pass
