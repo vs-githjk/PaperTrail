@@ -255,12 +255,14 @@ button:disabled {
 }
 
 .workbench-sidebar {
-  background: linear-gradient(180deg, rgba(247, 241, 232, 0.55), rgba(244, 239, 231, 0.35));
+  background:
+    linear-gradient(180deg, rgba(248, 242, 234, 0.82), rgba(242, 236, 227, 0.72));
   padding: 18px 12px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  border-right: 1px solid rgba(255, 235, 215, 0.12);
+  border-right: 1px solid rgba(180, 157, 133, 0.16);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.22);
 }
 
 .sidebar-block h2 {
@@ -292,7 +294,7 @@ button:disabled {
 
 .sidebar-empty {
   font-size: 0.82rem;
-  color: #737c7f;
+  color: #6f655c;
   margin: 4px 0 0;
 }
 
@@ -309,7 +311,7 @@ button:disabled {
 }
 
 .sidebar-item-btn:hover {
-  background: rgba(255, 249, 242, 0.62);
+  background: rgba(255, 249, 242, 0.9);
 }
 
 .workbench-canvas {
@@ -794,9 +796,9 @@ button:disabled {
   font-weight: 400;
   padding: 14px 16px;
   border-radius: 18px;
-  border: 1px solid #d8e1ec;
-  background: #f9fbfd;
-  color: #102033;
+  border: 1px solid rgba(182, 162, 139, 0.2);
+  background: rgba(255, 251, 245, 0.76);
+  color: #3b342d;
   display: grid;
   gap: 5px;
   text-align: left;
@@ -815,7 +817,7 @@ button:disabled {
 
 .workspace-btn span,
 .workspace-item span {
-  color: #475569;
+  color: #766b62;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
