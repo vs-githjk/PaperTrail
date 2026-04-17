@@ -213,8 +213,50 @@ class PaperRepository {
       return rows;
     } catch (error) {
       return memorySearchHistory
-        .filter((entry) => entry.userId === userId)
+        .filter((entry) => Number(entry.userId) === Number(userId))
         .slice(0, limit);
+    }
+  }
+
+  async deleteUserSearch(userId, searchId) {
+    const sid = Number(searchId);
+    if (!Number.isFinite(sid) || sid <= 0) {
+      return { deleted: 0 };
+    }
+
+    try {
+      const result = await pgPool.query(
+        "DELETE FROM user_searches WHERE id = $1 AND user_id = $2",
+        [sid, userId]
+      );
+      return { deleted: result.rowCount || 0 };
+    } catch (error) {
+      const idx = memorySearchHistory.findIndex(
+        (entry) => Number(entry.userId) === Number(userId) && Number(entry.id) === sid
+      );
+      if (idx >= 0) {
+        memorySearchHistory.splice(idx, 1);
+        return { deleted: 1 };
+      }
+      return { deleted: 0 };
+    }
+  }
+
+  async clearUserSearches(userId) {
+    try {
+      const result = await pgPool.query(
+        "DELETE FROM user_searches WHERE user_id = $1",
+        [userId]
+      );
+      return { deleted: result.rowCount || 0 };
+    } catch (error) {
+      const before = memorySearchHistory.length;
+      for (let i = memorySearchHistory.length - 1; i >= 0; i -= 1) {
+        if (Number(memorySearchHistory[i].userId) === Number(userId)) {
+          memorySearchHistory.splice(i, 1);
+        }
+      }
+      return { deleted: before - memorySearchHistory.length };
     }
   }
 

@@ -71,6 +71,24 @@ class PaperController {
       next(error);
     }
   }
+
+  async deleteHistoryItem(req, res, next) {
+    try {
+      await paperService.deleteHistoryEntry(req.user?.id, req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async clearHistory(req, res, next) {
+    try {
+      const payload = await paperService.clearHistory(req.user?.id);
+      res.json(payload);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new PaperController();

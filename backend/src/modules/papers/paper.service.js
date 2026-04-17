@@ -143,6 +143,32 @@ class PaperService {
       return { data: [] };
     }
   }
+
+  async deleteHistoryEntry(userId, searchId) {
+    if (!userId) {
+      const error = new Error("Unauthorized");
+      error.status = 401;
+      throw error;
+    }
+
+    const { deleted } = await paperRepository.deleteUserSearch(userId, searchId);
+    if (!deleted) {
+      const error = new Error("History entry not found.");
+      error.status = 404;
+      throw error;
+    }
+  }
+
+  async clearHistory(userId) {
+    if (!userId) {
+      const error = new Error("Unauthorized");
+      error.status = 401;
+      throw error;
+    }
+
+    await paperRepository.clearUserSearches(userId);
+    return { data: { cleared: true } };
+  }
 }
 
 module.exports = new PaperService();

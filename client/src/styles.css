@@ -82,17 +82,65 @@ h1 {
 .nav-link-btn {
   border: none;
   background: transparent;
-  color: #455f88;
+  color: #102033;
   border-radius: 0;
   padding: 0 2px;
   height: 30px;
-  border-bottom: 2px solid #455f88;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-bottom-color 0.15s ease;
+}
+
+.nav-link-btn:hover,
+.nav-link-btn:focus-visible {
+  color: #455f88;
+  border-bottom-color: #455f88;
+}
+
+.top-search-cluster {
+  flex: 1;
+  max-width: 430px;
+  margin-left: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .top-search-form {
   flex: 1;
-  max-width: 430px;
-  margin-left: 36px;
+  min-width: 0;
+  max-width: none;
+  margin-left: 0;
+}
+
+.workbench-topbar .workbench-refresh-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(69, 95, 136, 0.45);
+  background: rgba(255, 251, 245, 0.95);
+  color: #455f88;
+  font-size: 1.15rem;
+  line-height: 1;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.workbench-topbar .workbench-refresh-btn:hover:not(:disabled) {
+  background: #eef2ff;
+  border-color: #455f88;
+}
+
+.workbench-topbar .workbench-refresh-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .top-search-form input {
@@ -187,6 +235,88 @@ button:disabled {
   background: #f8fbff;
   box-shadow: 0 20px 48px rgba(15, 23, 42, 0.25);
   padding: 16px;
+}
+
+.history-modal {
+  width: min(480px, 100%);
+}
+
+.history-modal .history-modal-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.history-clear-all-btn {
+  height: 38px;
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 0.88rem;
+}
+
+.history-list-scroll {
+  max-height: min(50vh, 380px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  margin-right: -4px;
+}
+
+.history-list-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.history-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(69, 95, 136, 0.35);
+  border-radius: 999px;
+}
+
+.history-workspace-list {
+  gap: 10px;
+}
+
+.history-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.history-modal .history-remove-btn {
+  flex-shrink: 0;
+  width: 40px;
+  min-width: 40px;
+  height: auto;
+  min-height: 0;
+  align-self: stretch;
+  padding: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(182, 162, 139, 0.35);
+  background: rgba(255, 251, 245, 0.92);
+  color: #64748b;
+  font-size: 1.35rem;
+  line-height: 1;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.history-modal .history-remove-btn:hover:not(:disabled) {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.4);
+  background: #fff5f5;
+}
+
+.history-modal .history-remove-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.history-entry-btn {
+  flex: 1;
+  min-width: 0;
+  width: auto;
 }
 
 .auth-modal-header {
@@ -702,9 +832,42 @@ button:disabled {
   border: 1px solid rgba(171, 179, 183, 0.18);
 }
 
-.story-reason-card p,
-.story-abstract-card p {
+/* Match AncestorTree ForceGraph2D height (560px) + canvas chrome ≈ graph column */
+.story-abstract-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 560px;
+  min-height: 0;
+}
+
+.story-abstract-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
+}
+
+.story-abstract-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.story-abstract-scroll::-webkit-scrollbar-thumb {
+  background: rgba(69, 95, 136, 0.35);
+  border-radius: 999px;
+}
+
+.story-reason-card p {
   margin: 6px 0 0;
+  color: #4f5b63;
+  line-height: 1.5;
+}
+
+.story-abstract-scroll p {
+  margin: 0;
   color: #4f5b63;
   line-height: 1.5;
 }
@@ -1039,10 +1202,11 @@ section {
     padding: 10px 14px;
   }
 
-  .top-search-form {
+  .top-search-cluster {
     order: 3;
     max-width: none;
     width: 100%;
+    margin-left: 0;
   }
 
   .brand {

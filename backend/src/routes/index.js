@@ -18,6 +18,8 @@ router.get("/search", optionalAuth, (req, res, next) => paperController.search(r
 router.post("/papers/save", (req, res, next) => paperController.save(req, res, next));
 router.post("/research-trails/save", optionalAuth, (req, res, next) => paperController.saveTrail(req, res, next));
 router.get("/history", requireAuth, (req, res, next) => paperController.history(req, res, next));
+router.delete("/history/:id", requireAuth, (req, res, next) => paperController.deleteHistoryItem(req, res, next));
+router.delete("/history", requireAuth, (req, res, next) => paperController.clearHistory(req, res, next));
 router.get("/workspace", optionalAuth, (req, res, next) => paperController.workspace(req, res, next));
 router.post("/papers/ancestor-tree", optionalAuth, (req, res, next) => paperController.ancestors(req, res, next));
 

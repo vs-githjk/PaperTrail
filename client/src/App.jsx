@@ -1,8 +1,41 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import AncestorTree from "./components/AncestorTree";
 import Particles from "./components/Particles";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
+const WORKBENCH_SESSION_KEY = "papertrail_workbench_v1";
+
+function readWorkbenchSession() {
+  try {
+    const raw = sessionStorage.getItem(WORKBENCH_SESSION_KEY);
+    if (!raw) return null;
+    const snap = JSON.parse(raw);
+    if (!snap || typeof snap !== "object" || snap.version !== 1) return null;
+    return snap;
+  } catch {
+    return null;
+  }
+}
+
+function writeWorkbenchSession(payload) {
+  try {
+    let json = JSON.stringify(payload);
+    if (json.length > 4_500_000) {
+      json = JSON.stringify({ ...payload, graphData: null });
+    }
+    sessionStorage.setItem(WORKBENCH_SESSION_KEY, json);
+  } catch {
+    /* quota or stringify failure */
+  }
+}
+
+function clearWorkbenchSession() {
+  try {
+    sessionStorage.removeItem(WORKBENCH_SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 function getPaperId(paper) {
   return paper.id ?? paper.paperId ?? paper._id;
@@ -95,6 +128,8 @@ export default function App() {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [authError, setAuthError] = useState("");
   const [history, setHistory] = useState([]);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [removingHistoryId, setRemovingHistoryId] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -109,6 +144,9 @@ export default function App() {
   const [savingTrail, setSavingTrail] = useState(false);
   const [trailSaved, setTrailSaved] = useState(false);
   const [error, setError] = useState("");
+  const [sessionHydrated, setSessionHydrated] = useState(false);
+  const treeRestoreRef = useRef(null);
+  const handlePaperClickRef = useRef(null);
 
   const selectedPaper = useMemo(
     () => results.find((paper) => getPaperId(paper) === selectedPaperId) || null,
@@ -144,6 +182,47 @@ export default function App() {
       setHistory(payload?.data || []);
     } catch (error) {
       setHistory([]);
+    }
+  }
+
+  async function removeHistoryEntry(entryId) {
+    if (!authToken || entryId == null) return;
+    setError("");
+    setRemovingHistoryId(entryId);
+    try {
+      const response = await fetch(`${API_BASE}/api/history/${encodeURIComponent(entryId)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (response.status === 404) {
+        setError("That history entry was already removed.");
+      } else if (!response.ok) {
+        throw new Error(`Remove failed: ${response.status}`);
+      }
+      await fetchHistory();
+    } catch (err) {
+      setError(err.message || "Failed to remove search from history.");
+    } finally {
+      setRemovingHistoryId(null);
+    }
+  }
+
+  async function clearAllHistory() {
+    if (!authToken || history.length === 0) return;
+    if (!window.confirm("Remove all searches from your history?")) return;
+    setError("");
+    setHistoryBusy(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/history`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (!response.ok) throw new Error(`Clear history failed: ${response.status}`);
+      await fetchHistory();
+    } catch (err) {
+      setError(err.message || "Failed to clear history.");
+    } finally {
+      setHistoryBusy(false);
     }
   }
 
@@ -224,6 +303,40 @@ export default function App() {
   useEffect(() => {
     fetchHistory();
   }, [authToken, currentUser?.id]);
+
+  useLayoutEffect(() => {
+    const snap = readWorkbenchSession();
+    if (snap) {
+      setQuery(String(snap.query || ""));
+      setHasSearched(Boolean(snap.hasSearched));
+      setResults(Array.isArray(snap.results) ? snap.results : []);
+      setSearchPlan(Array.isArray(snap.searchPlan) ? snap.searchPlan : []);
+      setSelectedPaperId(snap.selectedPaperId ?? null);
+      setGraphData(snap.graphData ?? null);
+      setFocusedNode(null);
+      setTrailSaved(false);
+      if (snap.selectedPaperId && !snap.graphData) {
+        treeRestoreRef.current = snap.selectedPaperId;
+      } else {
+        treeRestoreRef.current = null;
+      }
+    }
+    setSessionHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!sessionHydrated) return;
+    const payload = {
+      version: 1,
+      query,
+      hasSearched,
+      results,
+      searchPlan,
+      selectedPaperId,
+      graphData
+    };
+    writeWorkbenchSession(payload);
+  }, [sessionHydrated, query, hasSearched, results, searchPlan, selectedPaperId, graphData]);
 
   async function refreshWorkspace() {
     if (!authToken) {
@@ -321,6 +434,38 @@ export default function App() {
     } finally {
       setLoadingTree(false);
     }
+  }
+
+  handlePaperClickRef.current = handlePaperClick;
+
+  useEffect(() => {
+    if (!sessionHydrated) return;
+    const pid = treeRestoreRef.current;
+    if (!pid || graphData) return;
+    const paper = results.find((p) => getPaperId(p) === pid);
+    if (!paper) {
+      treeRestoreRef.current = null;
+      return;
+    }
+    treeRestoreRef.current = null;
+    void handlePaperClickRef.current(paper);
+  }, [sessionHydrated, results, graphData]);
+
+  function handleGoHome() {
+    clearWorkbenchSession();
+    treeRestoreRef.current = null;
+    setError("");
+    setQuery("");
+    setHasSearched(false);
+    setResults([]);
+    setSearchPlan([]);
+    setSelectedPaperId(null);
+    setGraphData(null);
+    setFocusedNode(null);
+    setTrailSaved(false);
+    setLoadingSearch(false);
+    setLoadingTree(false);
+    setShowHistoryPanel(false);
   }
 
   async function handleTopMatchTree() {
@@ -454,6 +599,14 @@ export default function App() {
     setAuthError("");
     setShowHistoryPanel(false);
     localStorage.removeItem("papertrail_token");
+    clearWorkbenchSession();
+    setQuery("");
+    setResults([]);
+    setSearchPlan([]);
+    setSelectedPaperId(null);
+    setGraphData(null);
+    setFocusedNode(null);
+    setTrailSaved(false);
   }
 
   return (
@@ -482,15 +635,28 @@ export default function App() {
           <h1>PaperTrail</h1>
           <span className="brand-tag">Research constellation for guided reading</span>
         </div>
-        <form onSubmit={handleSearch} className="top-search-form">
-          <input
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Try a research topic, paper title, DOI, or paper link"
-            aria-label="Search papers"
-          />
-        </form>
+        <div className="top-search-cluster">
+          <form onSubmit={handleSearch} className="top-search-form">
+            <input
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Try a research topic, paper title, DOI, or paper link"
+              aria-label="Search papers"
+            />
+          </form>
+          <button
+            type="button"
+            className="workbench-refresh-btn"
+            onClick={() => {
+              handleGoHome();
+            }}
+            aria-label="Return to home"
+            title="Clear search and graph and go back to the home screen"
+          >
+            +
+          </button>
+        </div>
         <div className="nav-actions">
           <button
             type="button"
@@ -596,7 +762,7 @@ export default function App() {
 
       {showHistoryPanel ? (
         <div className="auth-modal-backdrop" onClick={() => setShowHistoryPanel(false)}>
-          <section className="auth-modal" onClick={(event) => event.stopPropagation()}>
+          <section className="auth-modal history-modal" onClick={(event) => event.stopPropagation()}>
             <div className="auth-modal-header">
               <h3>Your History</h3>
               <button
@@ -627,26 +793,55 @@ export default function App() {
             ) : history.length === 0 ? (
               <p>No history yet. Start searching and your searches will appear here.</p>
             ) : (
-              <ul className="workspace-list">
-                {history.map((entry) => (
-                  <li key={entry.id}>
-                    <button
-                      type="button"
-                      className="workspace-btn"
-                      onClick={async () => {
-                        const q = String(entry.query || "").trim();
-                        if (!q) return;
-                        setQuery(q);
-                        setShowHistoryPanel(false);
-                        await runSearch(q);
-                      }}
-                    >
-                      <strong>{entry.query}</strong>
-                      <span>{formatSessionTime(entry.createdAt)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <div className="history-modal-toolbar">
+                  <button
+                    type="button"
+                    className="secondary-btn history-clear-all-btn"
+                    onClick={() => {
+                      void clearAllHistory();
+                    }}
+                    disabled={historyBusy || removingHistoryId != null}
+                  >
+                    {historyBusy ? "Clearing…" : "Clear all"}
+                  </button>
+                </div>
+                <div className="history-list-scroll">
+                  <ul className="workspace-list history-workspace-list">
+                    {history.map((entry) => (
+                      <li key={entry.id} className="history-row">
+                        <button
+                          type="button"
+                          className="workspace-btn history-entry-btn"
+                          disabled={removingHistoryId === entry.id || historyBusy}
+                          onClick={async () => {
+                            const q = String(entry.query || "").trim();
+                            if (!q) return;
+                            setQuery(q);
+                            setShowHistoryPanel(false);
+                            await runSearch(q);
+                          }}
+                        >
+                          <strong>{entry.query}</strong>
+                          <span>{formatSessionTime(entry.createdAt)}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="history-remove-btn"
+                          disabled={removingHistoryId != null || historyBusy}
+                          aria-label={`Remove “${String(entry.query || "").trim() || "search"}” from history`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void removeHistoryEntry(entry.id);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
             )}
           </section>
         </div>
@@ -822,7 +1017,9 @@ export default function App() {
                     {focusedNode?.abstract ? (
                       <div className="story-abstract-card">
                         <span className="meta-label">Abstract Glimpse</span>
-                        <p>{focusedNode.abstract}</p>
+                        <div className="story-abstract-scroll">
+                          <p>{focusedNode.abstract}</p>
+                        </div>
                       </div>
                     ) : null}
                     {focusedNode?.doi ? (
