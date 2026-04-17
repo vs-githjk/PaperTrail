@@ -7,9 +7,9 @@
 body {
   margin: 0;
   background:
-    radial-gradient(circle at top, rgba(255, 199, 132, 0.14), transparent 24%),
-    radial-gradient(circle at 20% 20%, rgba(115, 98, 211, 0.12), transparent 22%),
-    linear-gradient(180deg, #1b1a27 0%, #211f35 24%, #ece4d7 72%, #e5dac9 100%);
+    radial-gradient(circle at top, rgba(255, 199, 132, 0.12), transparent 18%),
+    radial-gradient(circle at 20% 20%, rgba(115, 98, 211, 0.1), transparent 20%),
+    linear-gradient(180deg, #171522 0%, #1c1930 28%, #221d33 68%, #262033 100%);
   color: #2b3437;
   font-family: "Inter", sans-serif;
 }
@@ -314,7 +314,9 @@ button:disabled {
 
 .workbench-canvas {
   padding: 26px 28px 34px;
-  background: linear-gradient(180deg, rgba(255, 251, 245, 0.12), rgba(247, 240, 231, 0.18));
+  background:
+    radial-gradient(circle at top, rgba(255, 200, 136, 0.06), transparent 18%),
+    linear-gradient(180deg, rgba(37, 31, 53, 0.42), rgba(34, 29, 49, 0.34));
 }
 
 .canvas-header {
@@ -384,7 +386,7 @@ button:disabled {
 }
 
 .workbench-right-panel {
-  background: linear-gradient(180deg, rgba(247, 242, 234, 0.74), rgba(244, 239, 231, 0.62));
+  background: linear-gradient(180deg, rgba(247, 242, 234, 0.84), rgba(244, 239, 231, 0.78));
   border-left: 1px solid rgba(255, 236, 214, 0.14);
   padding: 22px 18px;
 }
@@ -999,7 +1001,7 @@ pre {
   height: 520px;
   bottom: -220px;
   left: 28%;
-  background: radial-gradient(circle, rgba(255, 207, 155, 0.18), transparent 76%);
+  background: radial-gradient(circle, rgba(255, 207, 155, 0.08), transparent 80%);
 }
 
 .focus-node-card p:last-child {
