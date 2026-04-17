@@ -320,3 +320,24 @@ test("live ancestor guide separates overview and foundational stages", () => {
     assert.ok(overviewSection.items.every((item) => item.role === "overview"));
   }
 });
+
+test("buildNode preserves richer metadata for graph inspection", () => {
+  const node = __private.buildNode(
+    {
+      paperId: "paper-123",
+      title: "Test Paper",
+      abstract: "A short abstract for graph inspection.",
+      year: 2021,
+      authors: [{ name: "Ada Lovelace" }, { name: "Alan Turing" }],
+      externalIds: { DOI: "10.1000/test-doi" },
+      citationCount: 42
+    },
+    1
+  );
+
+  assert.equal(node.id, "paper-123");
+  assert.equal(node.doi, "10.1000/test-doi");
+  assert.equal(node.citationCount, 42);
+  assert.equal(node.abstract, "A short abstract for graph inspection.");
+  assert.deepEqual(node.authors, ["Ada Lovelace", "Alan Turing"]);
+});

@@ -634,7 +634,7 @@ async function fetchSemanticScholarPaper(identifier) {
   const url =
     "https://api.semanticscholar.org/graph/v1/paper/" +
     encodeURIComponent(identifier) +
-    "?fields=paperId,title,abstract,year,authors,externalIds,citationCount,references.paperId,references.title,references.year,references.authors,references.externalIds";
+    "?fields=paperId,title,abstract,year,authors,externalIds,citationCount,references.paperId,references.title,references.abstract,references.year,references.authors,references.externalIds,references.citationCount";
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -670,12 +670,26 @@ async function resolvePaperSeed(paper) {
 }
 
 function buildNode(item, depth) {
+  const doi = item?.externalIds?.DOI || item?.doi || null;
+  const paperId = item.paperId || item.externalId || item.id || item.title;
+  const citationCount = Number.isFinite(Number(item?.citationCount)) ? Number(item.citationCount) : 0;
+  const authors = Array.isArray(item.authors)
+    ? item.authors.map((author) => author.name || author).filter(Boolean)
+    : [];
+  const abstract = typeof item?.abstract === "string" ? item.abstract.trim() : "";
+
   return {
-    id: item.paperId || item.externalIds?.DOI || item.id || item.title,
+    id: paperId || doi,
     title: item.title || "Untitled paper",
     label: item.title || "Untitled paper",
     year: item.year ?? null,
-    authors: Array.isArray(item.authors) ? item.authors.map((author) => author.name || author).filter(Boolean) : [],
+    authors,
+    abstract,
+    citationCount,
+    influenceScore: citationCount,
+    doi,
+    paperId,
+    source: item?.source || "semantic_scholar",
     depth
   };
 }
@@ -718,11 +732,35 @@ function buildFallbackTree(paper) {
     }
   ];
 
-  const nodes = [{ id: rootId, title: rootTitle, label: rootTitle, depth: 0 }];
+  const nodes = [{
+    id: rootId,
+    title: rootTitle,
+    label: rootTitle,
+    depth: 0,
+    abstract: typeof paper?.abstract === "string" ? paper.abstract : "",
+    citationCount: Number.isFinite(Number(paper?.citationCount)) ? Number(paper.citationCount) : 0,
+    influenceScore: Number.isFinite(Number(paper?.citationCount)) ? Number(paper.citationCount) : 0,
+    doi: paper?.doi || null,
+    paperId: paper?.paperId || paper?.externalId || rootId,
+    source: paper?.source || "fallback",
+    authors: Array.isArray(paper?.authors) ? paper.authors : []
+  }];
   const links = [];
 
   suggestedAncestors.forEach((item) => {
-    nodes.push({ id: item.id, title: item.title, label: item.title, depth: 1 });
+    nodes.push({
+      id: item.id,
+      title: item.title,
+      label: item.title,
+      depth: 1,
+      abstract: item.reason,
+      citationCount: 0,
+      influenceScore: 0,
+      doi: null,
+      paperId: item.id,
+      source: "fallback",
+      authors: []
+    });
     links.push({ source: rootId, target: item.id });
   });
 
@@ -758,12 +796,26 @@ function buildGuide(nodes, rootNode) {
     .slice(0, 4)
     .map((node, index) => {
       const roleMeta = classifyPaperRole(node, queryProfile, { depth: node.depth, rootYear: rootNode.year });
+      const storyStage =
+        roleMeta.role === "overview"
+          ? "broader_overview"
+          : roleMeta.role === "seminal"
+            ? "foundational_background"
+            : index === 0
+              ? "start_here"
+              : node.depth === 1
+                ? "foundational_background"
+                : "optional_supporting";
       return {
         id: node.id,
         title: node.title,
         year: node.year ?? null,
         role: roleMeta.role,
         roleLabel: roleMeta.roleLabel,
+        citationCount: node.citationCount ?? 0,
+        authors: Array.isArray(node.authors) ? node.authors : [],
+        abstract: node.abstract || "",
+        stage: storyStage,
         reason:
           index === 0
             ? "Best first background read before the seed paper"
@@ -869,6 +921,7 @@ module.exports = {
   __private: {
     buildCandidateQueries,
     buildGuide,
+    buildNode,
     buildReadingPlan,
     classifyQuery,
     classifyPaperRole,

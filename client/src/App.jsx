@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AncestorTree from "./components/AncestorTree";
+import Particles from "./components/Particles";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
 
@@ -37,6 +38,41 @@ function getRoleLabel(paper) {
   return paper.roleLabel ?? null;
 }
 
+function getPaperHref(paper) {
+  if (paper?.url) return paper.url;
+  if (paper?.doi) return `https://doi.org/${paper.doi}`;
+  if (paper?.source === "arxiv" && (paper?.paperId || paper?.externalId)) {
+    return `https://arxiv.org/abs/${paper.paperId || paper.externalId}`;
+  }
+  if (paper?.paperId || paper?.externalId) {
+    return `https://www.semanticscholar.org/paper/${paper.paperId || paper.externalId}`;
+  }
+  return null;
+}
+
+function getPaperSourceLabel(paper) {
+  if (!paper?.source) return "External source";
+  const source = String(paper.source).toLowerCase();
+  if (source === "semantic_scholar" || source === "semanticscholar") return "Semantic Scholar";
+  if (source === "arxiv") return "arXiv";
+  return paper.source;
+}
+
+function getStageLabel(stage) {
+  switch (stage) {
+    case "start_here":
+      return "Start Here";
+    case "foundational_background":
+      return "Foundational Background";
+    case "broader_overview":
+      return "Broader Overview";
+    case "optional_supporting":
+      return "Optional Supporting Reads";
+    default:
+      return "Reading Path";
+  }
+}
+
 function formatSessionTime(value) {
   if (!value) return "Saved recently";
   const date = new Date(value);
@@ -66,6 +102,7 @@ export default function App() {
   const [workspace, setWorkspace] = useState({ recentPapers: [], recentResearch: [] });
   const [selectedPaperId, setSelectedPaperId] = useState(null);
   const [graphData, setGraphData] = useState(null);
+  const [focusedNode, setFocusedNode] = useState(null);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
   const [savingPaperIds, setSavingPaperIds] = useState({});
@@ -218,6 +255,7 @@ export default function App() {
     setTrailSaved(false);
     setLoadingSearch(true);
     setGraphData(null);
+    setFocusedNode(null);
     setSelectedPaperId(null);
 
     try {
@@ -246,7 +284,10 @@ export default function App() {
 
   async function handleSearch(event) {
     event.preventDefault();
-    await runSearch(query);
+    const searchedResults = await runSearch(query);
+    if (searchedResults[0]) {
+      await handlePaperClick(searchedResults[0]);
+    }
   }
 
   async function handlePaperClick(paper) {
@@ -256,6 +297,7 @@ export default function App() {
     setError("");
     setLoadingTree(true);
     setSelectedPaperId(paperId);
+    setFocusedNode(null);
 
     try {
       const response = await fetch(`${API_BASE}/api/papers/ancestor-tree`, {
@@ -295,6 +337,11 @@ export default function App() {
     }
 
     await handlePaperClick(topMatch);
+  }
+
+  async function handleFocusedNodeAsSeed() {
+    if (!focusedNode) return;
+    await handlePaperClick(focusedNode);
   }
 
   async function handleSaveTrail() {
@@ -411,9 +458,29 @@ export default function App() {
 
   return (
     <main className="app workbench-shell">
+      <div className="cosmos-backdrop" aria-hidden="true">
+        <div className="cosmos-orb cosmos-orb-left" />
+        <div className="cosmos-orb cosmos-orb-right" />
+        <div className="cosmos-orb cosmos-orb-bottom" />
+        <Particles
+          className="cosmos-particles"
+          particleColors={["#ffcf8b", "#f58b7c", "#8ca6ff", "#d7c2ff"]}
+          particleCount={180}
+          particleSpread={9}
+          speed={0.06}
+          particleBaseSize={82}
+          sizeRandomness={0.8}
+          moveParticlesOnHover
+          particleHoverFactor={0.35}
+          alphaParticles
+          cameraDistance={18}
+          pixelRatio={1}
+        />
+      </div>
       <header className="top-nav workbench-topbar">
         <div className="brand">
           <h1>PaperTrail</h1>
+          <span className="brand-tag">Research constellation for guided reading</span>
         </div>
         <form onSubmit={handleSearch} className="top-search-form">
           <input
@@ -610,6 +677,7 @@ export default function App() {
                       }}
                     >
                       <strong>{session.selectedPaper?.title || "Untitled paper"}</strong>
+                      <span>{session.query || "Saved trail"}</span>
                       <span>{formatSessionTime(session.createdAt)}</span>
                     </button>
                   </li>
@@ -632,7 +700,7 @@ export default function App() {
                   <li key={paper.id || paper.externalId || paper.title}>
                     <div className="workspace-item sidebar-item-btn">
                       <strong>{paper.title}</strong>
-                      <span>{paper.year || "Year unknown"}</span>
+                      <span>{paper.year || "Year unknown"} · {getPaperSourceLabel(paper)}</span>
                     </div>
                   </li>
                 ))}
@@ -643,15 +711,157 @@ export default function App() {
 
         <section className="workbench-canvas">
           {!hasSearched ? (
-            <div className="canvas-empty">
-              <p>Search for a topic or paper to begin your workbench session.</p>
+            <div className="canvas-empty canvas-welcome">
+              <span className="canvas-badge">Warm Knowledge Cosmos</span>
+              <h2>Search a topic and let PaperTrail draw the intellectual sky around it.</h2>
+              <p>
+                Start with a research question, paper title, DOI, or link. PaperTrail will surface the strongest
+                starting point, map the lineage behind it, and help you decide what to read next.
+              </p>
             </div>
           ) : (
             <>
               <header className="canvas-header">
                 <span className="canvas-badge">AI Suggested Reading Path</span>
-                <h2>Read these first to get oriented quickly</h2>
+                <h2>{selectedPaper ? `Tracing the lineage behind ${getPaperTitle(selectedPaper)}` : "Building your research map"}</h2>
+                <p className="canvas-subtitle">
+                  {selectedPaper
+                    ? "The tree is now the main workspace. Click a node to open the source paper in a new tab."
+                    : "PaperTrail will map the top starting point first, then let you swap seeds from the right panel."}
+                </p>
               </header>
+
+              <section className="tree-hero agentic-card">
+                <div className="tree-hero-toolbar">
+                  <div>
+                    <p className="meta-label">Current seed</p>
+                    <h3>{selectedPaper ? getPaperTitle(selectedPaper) : "Top match will appear here"}</h3>
+                  </div>
+                  <div className="tree-hero-actions">
+                    <button type="button" className="secondary-btn hero-inline-btn" onClick={handleTopMatchTree} disabled={loadingTree}>
+                      {loadingTree ? "Building..." : "Rebuild From Top Match"}
+                    </button>
+                    {guide ? (
+                      <button
+                        type="button"
+                        className="hero-inline-btn"
+                        onClick={handleSaveTrail}
+                        disabled={savingTrail || trailSaved || !selectedPaper}
+                      >
+                        {trailSaved ? "Trail Saved" : savingTrail ? "Saving..." : "Save Trail"}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                {Array.isArray(results) && results.length > 0 ? (
+                  <div className="seed-switcher">
+                    {results.slice(0, 6).map((paper, index) => {
+                      const isActive = getPaperId(paper) === selectedPaperId;
+                      return (
+                        <button
+                          key={getPaperId(paper) || getPaperTitle(paper)}
+                          type="button"
+                          className={isActive ? "seed-chip seed-chip-active" : "seed-chip"}
+                          onClick={() => handlePaperClick(paper)}
+                        >
+                          <span>{index + 1}</span>
+                          <span>{getPaperTitle(paper)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                <div className="tree-explorer-layout">
+                  <div className="tree-stage">
+                    {loadingTree ? <p className="tree-loading-copy">Building ancestor tree...</p> : null}
+                    {!loadingTree ? (
+                      <AncestorTree
+                        data={graphData}
+                        selectedNodeId={focusedNode?.id || null}
+                        onNodeSelect={setFocusedNode}
+                      />
+                    ) : null}
+                  </div>
+
+                  <aside className="node-inspector agentic-card">
+                    <p className="meta-label">Node Inspector</p>
+                    <h4>{focusedNode?.title || "Select a node in the map"}</h4>
+                    <p className="node-inspector-copy">
+                      {focusedNode
+                        ? "Open the paper source, inspect its place in the lineage, or promote it into a fresh seed."
+                        : "Click any node in the map to inspect it here. The graph is meant to be explored, not just viewed."}
+                    </p>
+                    <div className="node-inspector-facts">
+                      <div>
+                        <span>Reading stage</span>
+                        <strong>{focusedNode ? getStageLabel(focusedNode.stage) : "No stage selected"}</strong>
+                      </div>
+                      <div>
+                        <span>Role</span>
+                        <strong>{focusedNode?.kind === "seed" ? "Current seed" : "Ancestor node"}</strong>
+                      </div>
+                      <div>
+                        <span>Year</span>
+                        <strong>{focusedNode?.year || "Unknown"}</strong>
+                      </div>
+                      <div>
+                        <span>Source</span>
+                        <strong>{focusedNode ? getPaperSourceLabel(focusedNode) : "No source selected"}</strong>
+                      </div>
+                      <div>
+                        <span>Citations</span>
+                        <strong>{focusedNode ? focusedNode.citationCount || 0 : 0}</strong>
+                      </div>
+                    </div>
+                    {focusedNode?.storyReason ? (
+                      <div className="story-reason-card">
+                        <span className="meta-label">Why this matters</span>
+                        <p>{focusedNode.storyReason}</p>
+                      </div>
+                    ) : null}
+                    {focusedNode?.abstract ? (
+                      <div className="story-abstract-card">
+                        <span className="meta-label">Abstract Glimpse</span>
+                        <p>{focusedNode.abstract}</p>
+                      </div>
+                    ) : null}
+                    {focusedNode?.doi ? (
+                      <p className="node-identifier">DOI: {focusedNode.doi}</p>
+                    ) : focusedNode?.paperId ? (
+                      <p className="node-identifier">Paper ID: {focusedNode.paperId}</p>
+                    ) : null}
+                    <div className="node-inspector-actions">
+                      <a
+                        className={getPaperHref(focusedNode) ? "paper-link-btn inspector-link-btn" : "paper-link-btn inspector-link-btn disabled-link-btn"}
+                        href={getPaperHref(focusedNode) || undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-disabled={!getPaperHref(focusedNode)}
+                        onClick={(event) => {
+                          if (!getPaperHref(focusedNode)) event.preventDefault();
+                        }}
+                      >
+                        Open source
+                      </a>
+                      <button
+                        type="button"
+                        className="secondary-btn inspector-seed-btn"
+                        disabled={!focusedNode || loadingTree}
+                        onClick={handleFocusedNodeAsSeed}
+                      >
+                        Use as new seed
+                      </button>
+                    </div>
+                  </aside>
+                </div>
+              </section>
+
+              {guide ? (
+                <div className="guide-card agentic-card">
+                  <h3>{guide.title}</h3>
+                  <p>{guide.summary}</p>
+                </div>
+              ) : null}
 
               {Array.isArray(searchPlan) && searchPlan.length > 0 ? (
                 <div className="guide-card agentic-card">
@@ -664,58 +874,6 @@ export default function App() {
                   ))}
                 </div>
               ) : null}
-
-              <ul className="results">
-                {results.map((paper, index) => {
-                  const id = getPaperId(paper);
-                  const paperKey = String(id || paper.externalId || getPaperTitle(paper));
-                  const isSaved = savedPaperKeys.has(paperKey);
-                  const isSaving = Boolean(savingPaperIds[paperKey]);
-                  return (
-                    <li key={id || getPaperTitle(paper)}>
-                      <div className="paper-card agentic-card">
-                        <button type="button" className="paper-btn" onClick={() => handlePaperClick(paper)}>
-                          <span className="mini-badge">
-                            {getRoleLabel(paper) || "Best Starting Paper"}
-                          </span>
-                          <strong>
-                            {index + 1}. {getPaperTitle(paper)}
-                          </strong>
-                          {paper.matchReason ? <span>Why this is a good start: {paper.matchReason}</span> : null}
-                          <span>Authors: {getPaperAuthors(paper)}</span>
-                          <span>Influence Score: {getInfluenceScore(paper)}</span>
-                          {getRecommendationScore(paper) ? (
-                            <span>Recommendation Score: {getRecommendationScore(paper)}</span>
-                          ) : null}
-                        </button>
-                        <button
-                          type="button"
-                          className="save-paper-btn"
-                          onClick={() => handleSavePaper(paper)}
-                          disabled={isSaved || isSaving}
-                        >
-                          {isSaved ? "Saved" : isSaving ? "Saving..." : "Save"}
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {guide ? (
-                <div className="guide-card agentic-card">
-                  <button
-                    type="button"
-                    className="save-guide-btn"
-                    onClick={handleSaveTrail}
-                    disabled={savingTrail || trailSaved || !selectedPaper}
-                  >
-                    {trailSaved ? "Saved" : savingTrail ? "Saving..." : "Save"}
-                  </button>
-                  <h3>{guide.title}</h3>
-                  <p>{guide.summary}</p>
-                </div>
-              ) : null}
             </>
           )}
         </section>
@@ -724,11 +882,49 @@ export default function App() {
           <button type="button" className="tree-cta" onClick={handleTopMatchTree} disabled={loadingTree}>
             {loadingTree ? "Building..." : "Build Tree From Top Match"}
           </button>
-          <h2>Ancestor Tree</h2>
-          <div className="tree-placeholder">
-            {loadingTree ? <p>Loading ancestor tree...</p> : null}
-            {!loadingTree ? <AncestorTree data={graphData} /> : null}
-          </div>
+          <h2>Starting Points</h2>
+          <p className="panel-intro">Pick a seed to redraw the lineage. Use open to jump to the paper source.</p>
+          <ul className="results compact-results">
+            {results.map((paper, index) => {
+              const id = getPaperId(paper);
+              const paperKey = String(id || paper.externalId || getPaperTitle(paper));
+              const isSaved = savedPaperKeys.has(paperKey);
+              const isSaving = Boolean(savingPaperIds[paperKey]);
+              const href = getPaperHref(paper);
+              const isActive = id === selectedPaperId;
+
+              return (
+                <li key={id || getPaperTitle(paper)}>
+                  <div className={isActive ? "paper-card compact-paper-card paper-card-active" : "paper-card compact-paper-card"}>
+                    <button type="button" className="paper-btn compact-paper-btn" onClick={() => handlePaperClick(paper)}>
+                      <span className="mini-badge">
+                        {getRoleLabel(paper) || "Best Starting Paper"}
+                      </span>
+                      <strong>
+                        {index + 1}. {getPaperTitle(paper)}
+                      </strong>
+                      {paper.matchReason ? <span>{paper.matchReason}</span> : null}
+                    </button>
+                    <div className="paper-card-actions">
+                      <button
+                        type="button"
+                        className="save-paper-btn compact-action-btn"
+                        onClick={() => handleSavePaper(paper)}
+                        disabled={isSaved || isSaving}
+                      >
+                        {isSaved ? "Saved" : isSaving ? "Saving..." : "Save"}
+                      </button>
+                      {href ? (
+                        <a className="paper-link-btn compact-action-btn" href={href} target="_blank" rel="noreferrer">
+                          Open
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </aside>
       </div>
     </main>
