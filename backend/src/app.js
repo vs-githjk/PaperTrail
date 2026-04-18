@@ -5,11 +5,26 @@ const config = require("./config");
 
 const app = express();
 
+function isDevLocalhostOrigin(origin) {
+  if (config.env !== "development") return false;
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 const corsOptions = config.corsOrigins.length === 0
   ? undefined
   : {
       origin(origin, callback) {
         if (!origin || config.corsOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+
+        if (isDevLocalhostOrigin(origin)) {
           callback(null, true);
           return;
         }
