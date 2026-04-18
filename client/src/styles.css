@@ -4,6 +4,12 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background:
@@ -12,6 +18,7 @@ body {
     linear-gradient(180deg, #171522 0%, #1c1930 28%, #221d33 68%, #262033 100%);
   color: #2b3437;
   font-family: "Inter", sans-serif;
+  overflow: hidden;
 }
 
 .app {
@@ -19,6 +26,8 @@ body {
   margin: 0;
   padding: 0;
   position: relative;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 h1,
@@ -63,6 +72,28 @@ h1 {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.brand-home-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: none;
+  min-height: 0;
+}
+
+.brand-home-btn:hover,
+.brand-home-btn:focus-visible {
+  transform: none;
+  opacity: 0.92;
+}
+
+.brand-home-btn:focus-visible {
+  outline: 2px solid rgba(69, 95, 136, 0.35);
+  outline-offset: 6px;
 }
 
 .brand-tag {
@@ -379,9 +410,11 @@ button:disabled {
 .workbench-grid {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 330px;
-  min-height: calc(100vh - 64px);
+  height: calc(100dvh - 64px);
+  min-height: calc(100dvh - 64px);
   position: relative;
   z-index: 1;
+  overflow: hidden;
 }
 
 .workbench-sidebar {
@@ -393,6 +426,17 @@ button:disabled {
   gap: 16px;
   border-right: 1px solid rgba(180, 157, 133, 0.16);
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.22);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar-scroll {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
 }
 
 .sidebar-block h2 {
@@ -449,6 +493,17 @@ button:disabled {
   background:
     radial-gradient(circle at top, rgba(255, 200, 136, 0.06), transparent 18%),
     linear-gradient(180deg, rgba(37, 31, 53, 0.42), rgba(34, 29, 49, 0.34));
+  min-height: 0;
+  overflow: hidden;
+}
+
+.canvas-scroll {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
 }
 
 .canvas-header {
@@ -521,6 +576,11 @@ button:disabled {
   background: linear-gradient(180deg, rgba(247, 242, 234, 0.84), rgba(244, 239, 231, 0.78));
   border-left: 1px solid rgba(255, 236, 214, 0.14);
   padding: 22px 18px;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .workbench-right-panel h2 {
@@ -540,6 +600,30 @@ button:disabled {
   margin: 0 0 16px;
   color: #5d676d;
   line-height: 1.45;
+}
+
+.right-panel-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-bottom: 8px;
+  background: linear-gradient(
+    180deg,
+    rgba(245, 239, 232, 0.96),
+    rgba(245, 239, 232, 0.82) 72%,
+    rgba(245, 239, 232, 0)
+  );
+  backdrop-filter: blur(10px);
+}
+
+.starting-points-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-snap-type: y proximity;
+  padding-right: 4px;
 }
 
 .tree-placeholder {
@@ -894,6 +978,11 @@ button:disabled {
   gap: 12px;
 }
 
+.starting-point-slide {
+  scroll-snap-align: start;
+  scroll-margin-top: 14px;
+}
+
 .compact-paper-card {
   padding: 12px;
   border: 1px solid rgba(171, 179, 183, 0.14);
@@ -1196,6 +1285,15 @@ section {
 }
 
 @media (max-width: 700px) {
+  body {
+    overflow: auto;
+  }
+
+  .app {
+    height: auto;
+    overflow: visible;
+  }
+
   .workbench-topbar {
     flex-wrap: wrap;
     height: auto;
@@ -1217,11 +1315,36 @@ section {
 
   .workbench-grid {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
   }
 
   .workbench-right-panel {
     border-left: none;
     border-top: 1px solid rgba(171, 179, 183, 0.25);
+    overflow: visible;
+  }
+
+  .workbench-sidebar,
+  .workbench-canvas {
+    overflow: visible;
+  }
+
+  .sidebar-scroll,
+  .canvas-scroll,
+  .starting-points-scroll {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .right-panel-sticky {
+    position: static;
+    background: transparent;
+    backdrop-filter: none;
+    padding-bottom: 0;
   }
 
   .nav-actions {

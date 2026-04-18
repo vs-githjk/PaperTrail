@@ -631,10 +631,18 @@ export default function App() {
         />
       </div>
       <header className="top-nav workbench-topbar">
-        <div className="brand">
+        <button
+          type="button"
+          className="brand brand-home-btn"
+          onClick={() => {
+            handleGoHome();
+          }}
+          aria-label="Go to PaperTrail home"
+          title="Clear search and graph and go back to the home screen"
+        >
           <h1>PaperTrail</h1>
           <span className="brand-tag">Research constellation for guided reading</span>
-        </div>
+        </button>
         <div className="top-search-cluster">
           <form onSubmit={handleSearch} className="top-search-form">
             <input
@@ -850,135 +858,138 @@ export default function App() {
       {error ? <p className="error">{error}</p> : null}
       <div className="workbench-grid">
         <aside className="workbench-sidebar">
-          <section className="sidebar-block">
-            <div className="sidebar-heading-row">
-              <h2>Recent Research Trails</h2>
-            </div>
-            {!isLoggedIn ? (
-              <p className="sidebar-empty">Login to view saved trails.</p>
-            ) : workspace.recentResearch.length === 0 ? (
-              <p className="sidebar-empty">Saved trails appear here.</p>
-            ) : (
-              <ul className="workspace-list compact-list">
-                {workspace.recentResearch.map((session) => (
-                  <li key={session.id}>
-                    <button
-                      type="button"
-                      className="workspace-btn sidebar-item-btn"
-                      onClick={() => {
-                        const selected = session.selectedPaper || {};
-                        setQuery(session.query || selected.title || "");
-                        handlePaperClick(selected);
-                      }}
-                    >
-                      <strong>{session.selectedPaper?.title || "Untitled paper"}</strong>
-                      <span>{session.query || "Saved trail"}</span>
-                      <span>{formatSessionTime(session.createdAt)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <div className="sidebar-scroll">
+            <section className="sidebar-block">
+              <div className="sidebar-heading-row">
+                <h2>Recent Research Trails</h2>
+              </div>
+              {!isLoggedIn ? (
+                <p className="sidebar-empty">Login to view saved trails.</p>
+              ) : workspace.recentResearch.length === 0 ? (
+                <p className="sidebar-empty">Saved trails appear here.</p>
+              ) : (
+                <ul className="workspace-list compact-list">
+                  {workspace.recentResearch.map((session) => (
+                    <li key={session.id}>
+                      <button
+                        type="button"
+                        className="workspace-btn sidebar-item-btn"
+                        onClick={() => {
+                          const selected = session.selectedPaper || {};
+                          setQuery(session.query || selected.title || "");
+                          handlePaperClick(selected);
+                        }}
+                      >
+                        <strong>{session.selectedPaper?.title || "Untitled paper"}</strong>
+                        <span>{session.query || "Saved trail"}</span>
+                        <span>{formatSessionTime(session.createdAt)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-          <section className="sidebar-block">
-            <div className="sidebar-heading-row">
-              <h2>Recently Saved Papers</h2>
-            </div>
-            {!isLoggedIn ? (
-              <p className="sidebar-empty">Login to view saved papers.</p>
-            ) : workspace.recentPapers.length === 0 ? (
-              <p className="sidebar-empty">Saved papers appear here.</p>
-            ) : (
-              <ul className="workspace-list compact-list">
-                {workspace.recentPapers.map((paper) => (
-                  <li key={paper.id || paper.externalId || paper.title}>
-                    <div className="workspace-item sidebar-item-btn">
-                      <strong>{paper.title}</strong>
-                      <span>{paper.year || "Year unknown"} · {getPaperSourceLabel(paper)}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+            <section className="sidebar-block">
+              <div className="sidebar-heading-row">
+                <h2>Recently Saved Papers</h2>
+              </div>
+              {!isLoggedIn ? (
+                <p className="sidebar-empty">Login to view saved papers.</p>
+              ) : workspace.recentPapers.length === 0 ? (
+                <p className="sidebar-empty">Saved papers appear here.</p>
+              ) : (
+                <ul className="workspace-list compact-list">
+                  {workspace.recentPapers.map((paper) => (
+                    <li key={paper.id || paper.externalId || paper.title}>
+                      <div className="workspace-item sidebar-item-btn">
+                        <strong>{paper.title}</strong>
+                        <span>{paper.year || "Year unknown"} · {getPaperSourceLabel(paper)}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
         </aside>
 
         <section className="workbench-canvas">
-          {!hasSearched ? (
-            <div className="canvas-empty canvas-welcome">
-              <span className="canvas-badge">Warm Knowledge Cosmos</span>
-              <h2>Search a topic and let PaperTrail draw the intellectual sky around it.</h2>
-              <p>
-                Start with a research question, paper title, DOI, or link. PaperTrail will surface the strongest
-                starting point, map the lineage behind it, and help you decide what to read next.
-              </p>
-            </div>
-          ) : (
-            <>
-              <header className="canvas-header">
-                <span className="canvas-badge">AI Suggested Reading Path</span>
-                <h2>{selectedPaper ? `Tracing the lineage behind ${getPaperTitle(selectedPaper)}` : "Building your research map"}</h2>
-                <p className="canvas-subtitle">
-                  {selectedPaper
-                    ? "The tree is now the main workspace. Click a node to open the source paper in a new tab."
-                    : "PaperTrail will map the top starting point first, then let you swap seeds from the right panel."}
+          <div className="canvas-scroll">
+            {!hasSearched ? (
+              <div className="canvas-empty canvas-welcome">
+                <span className="canvas-badge">Warm Knowledge Cosmos</span>
+                <h2>Search a topic and let PaperTrail draw the intellectual sky around it.</h2>
+                <p>
+                  Start with a research question, paper title, DOI, or link. PaperTrail will surface the strongest
+                  starting point, map the lineage behind it, and help you decide what to read next.
                 </p>
-              </header>
+              </div>
+            ) : (
+              <>
+                <header className="canvas-header">
+                  <span className="canvas-badge">AI Suggested Reading Path</span>
+                  <h2>{selectedPaper ? `Tracing the lineage behind ${getPaperTitle(selectedPaper)}` : "Building your research map"}</h2>
+                  <p className="canvas-subtitle">
+                    {selectedPaper
+                      ? "The tree is now the main workspace. Click a node to open the source paper in a new tab."
+                      : "PaperTrail will map the top starting point first, then let you swap seeds from the right panel."}
+                  </p>
+                </header>
 
-              <section className="tree-hero agentic-card">
-                <div className="tree-hero-toolbar">
-                  <div>
-                    <p className="meta-label">Current seed</p>
-                    <h3>{selectedPaper ? getPaperTitle(selectedPaper) : "Top match will appear here"}</h3>
-                  </div>
-                  <div className="tree-hero-actions">
-                    <button type="button" className="secondary-btn hero-inline-btn" onClick={handleTopMatchTree} disabled={loadingTree}>
-                      {loadingTree ? "Building..." : "Rebuild From Top Match"}
-                    </button>
-                    {guide ? (
-                      <button
-                        type="button"
-                        className="hero-inline-btn"
-                        onClick={handleSaveTrail}
-                        disabled={savingTrail || trailSaved || !selectedPaper}
-                      >
-                        {trailSaved ? "Trail Saved" : savingTrail ? "Saving..." : "Save Trail"}
+                <section className="tree-hero agentic-card">
+                  <div className="tree-hero-toolbar">
+                    <div>
+                      <p className="meta-label">Current seed</p>
+                      <h3>{selectedPaper ? getPaperTitle(selectedPaper) : "Top match will appear here"}</h3>
+                    </div>
+                    <div className="tree-hero-actions">
+                      <button type="button" className="secondary-btn hero-inline-btn" onClick={handleTopMatchTree} disabled={loadingTree}>
+                        {loadingTree ? "Building..." : "Rebuild From Top Match"}
                       </button>
-                    ) : null}
-                  </div>
-                </div>
-                {Array.isArray(results) && results.length > 0 ? (
-                  <div className="seed-switcher">
-                    {results.slice(0, 6).map((paper, index) => {
-                      const isActive = getPaperId(paper) === selectedPaperId;
-                      return (
+                      {guide ? (
                         <button
-                          key={getPaperId(paper) || getPaperTitle(paper)}
                           type="button"
-                          className={isActive ? "seed-chip seed-chip-active" : "seed-chip"}
-                          onClick={() => handlePaperClick(paper)}
+                          className="hero-inline-btn"
+                          onClick={handleSaveTrail}
+                          disabled={savingTrail || trailSaved || !selectedPaper}
                         >
-                          <span>{index + 1}</span>
-                          <span>{getPaperTitle(paper)}</span>
+                          {trailSaved ? "Trail Saved" : savingTrail ? "Saving..." : "Save Trail"}
                         </button>
-                      );
-                    })}
+                      ) : null}
+                    </div>
                   </div>
-                ) : null}
-                <div className="tree-explorer-layout">
-                  <div className="tree-stage">
-                    {loadingTree ? <p className="tree-loading-copy">Building ancestor tree...</p> : null}
-                    {!loadingTree ? (
-                      <AncestorTree
-                        data={graphData}
-                        selectedNodeId={focusedNode?.id || null}
-                        onNodeSelect={setFocusedNode}
-                      />
-                    ) : null}
-                  </div>
+                  {Array.isArray(results) && results.length > 0 ? (
+                    <div className="seed-switcher">
+                      {results.slice(0, 6).map((paper, index) => {
+                        const isActive = getPaperId(paper) === selectedPaperId;
+                        return (
+                          <button
+                            key={getPaperId(paper) || getPaperTitle(paper)}
+                            type="button"
+                            className={isActive ? "seed-chip seed-chip-active" : "seed-chip"}
+                            onClick={() => handlePaperClick(paper)}
+                          >
+                            <span>{index + 1}</span>
+                            <span>{getPaperTitle(paper)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <div className="tree-explorer-layout">
+                    <div className="tree-stage">
+                      {loadingTree ? <p className="tree-loading-copy">Building ancestor tree...</p> : null}
+                      {!loadingTree ? (
+                        <AncestorTree
+                          data={graphData}
+                          selectedNodeId={focusedNode?.id || null}
+                          onNodeSelect={setFocusedNode}
+                        />
+                      ) : null}
+                    </div>
 
-                  <aside className="node-inspector agentic-card">
+                    <aside className="node-inspector agentic-card">
                     <p className="meta-label">Node Inspector</p>
                     <h4>{focusedNode?.title || "Select a node in the map"}</h4>
                     <p className="node-inspector-copy">
@@ -1049,79 +1060,84 @@ export default function App() {
                         Use as new seed
                       </button>
                     </div>
-                  </aside>
-                </div>
-              </section>
+                    </aside>
+                  </div>
+                </section>
 
-              {guide ? (
-                <div className="guide-card agentic-card">
-                  <h3>{guide.title}</h3>
-                  <p>{guide.summary}</p>
-                </div>
-              ) : null}
+                {guide ? (
+                  <div className="guide-card agentic-card">
+                    <h3>{guide.title}</h3>
+                    <p>{guide.summary}</p>
+                  </div>
+                ) : null}
 
-              {Array.isArray(searchPlan) && searchPlan.length > 0 ? (
-                <div className="guide-card agentic-card">
-                  <h3>Suggested Reading Path</h3>
-                  {searchPlan.map((section) => (
-                    <div key={section.stage} className="plan-section">
-                      <strong>{section.label}</strong>
-                      <p>{section.description}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </>
-          )}
+                {Array.isArray(searchPlan) && searchPlan.length > 0 ? (
+                  <div className="guide-card agentic-card">
+                    <h3>Suggested Reading Path</h3>
+                    {searchPlan.map((section) => (
+                      <div key={section.stage} className="plan-section">
+                        <strong>{section.label}</strong>
+                        <p>{section.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
         </section>
 
         <aside className="workbench-right-panel">
-          <button type="button" className="tree-cta" onClick={handleTopMatchTree} disabled={loadingTree}>
-            {loadingTree ? "Building..." : "Build Tree From Top Match"}
-          </button>
-          <h2>Starting Points</h2>
-          <p className="panel-intro">Pick a seed to redraw the lineage. Use open to jump to the paper source.</p>
-          <ul className="results compact-results">
-            {results.map((paper, index) => {
-              const id = getPaperId(paper);
-              const paperKey = String(id || paper.externalId || getPaperTitle(paper));
-              const isSaved = savedPaperKeys.has(paperKey);
-              const isSaving = Boolean(savingPaperIds[paperKey]);
-              const href = getPaperHref(paper);
-              const isActive = id === selectedPaperId;
+          <div className="right-panel-sticky">
+            <button type="button" className="tree-cta" onClick={handleTopMatchTree} disabled={loadingTree}>
+              {loadingTree ? "Building..." : "Build Tree From Top Match"}
+            </button>
+            <h2>Starting Points</h2>
+            <p className="panel-intro">Pick a seed to redraw the lineage. Use open to jump to the paper source.</p>
+          </div>
+          <div className="starting-points-scroll">
+            <ul className="results compact-results">
+              {results.map((paper, index) => {
+                const id = getPaperId(paper);
+                const paperKey = String(id || paper.externalId || getPaperTitle(paper));
+                const isSaved = savedPaperKeys.has(paperKey);
+                const isSaving = Boolean(savingPaperIds[paperKey]);
+                const href = getPaperHref(paper);
+                const isActive = id === selectedPaperId;
 
-              return (
-                <li key={id || getPaperTitle(paper)}>
-                  <div className={isActive ? "paper-card compact-paper-card paper-card-active" : "paper-card compact-paper-card"}>
-                    <button type="button" className="paper-btn compact-paper-btn" onClick={() => handlePaperClick(paper)}>
-                      <span className="mini-badge">
-                        {getRoleLabel(paper) || "Best Starting Paper"}
-                      </span>
-                      <strong>
-                        {index + 1}. {getPaperTitle(paper)}
-                      </strong>
-                      {paper.matchReason ? <span>{paper.matchReason}</span> : null}
-                    </button>
-                    <div className="paper-card-actions">
-                      <button
-                        type="button"
-                        className="save-paper-btn compact-action-btn"
-                        onClick={() => handleSavePaper(paper)}
-                        disabled={isSaved || isSaving}
-                      >
-                        {isSaved ? "Saved" : isSaving ? "Saving..." : "Save"}
+                return (
+                  <li key={id || getPaperTitle(paper)} className="starting-point-slide">
+                    <div className={isActive ? "paper-card compact-paper-card paper-card-active" : "paper-card compact-paper-card"}>
+                      <button type="button" className="paper-btn compact-paper-btn" onClick={() => handlePaperClick(paper)}>
+                        <span className="mini-badge">
+                          {getRoleLabel(paper) || "Best Starting Paper"}
+                        </span>
+                        <strong>
+                          {index + 1}. {getPaperTitle(paper)}
+                        </strong>
+                        {paper.matchReason ? <span>{paper.matchReason}</span> : null}
                       </button>
-                      {href ? (
-                        <a className="paper-link-btn compact-action-btn" href={href} target="_blank" rel="noreferrer">
-                          Open
-                        </a>
-                      ) : null}
+                      <div className="paper-card-actions">
+                        <button
+                          type="button"
+                          className="save-paper-btn compact-action-btn"
+                          onClick={() => handleSavePaper(paper)}
+                          disabled={isSaved || isSaving}
+                        >
+                          {isSaved ? "Saved" : isSaving ? "Saving..." : "Save"}
+                        </button>
+                        {href ? (
+                          <a className="paper-link-btn compact-action-btn" href={href} target="_blank" rel="noreferrer">
+                            Open
+                          </a>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </aside>
       </div>
     </main>
