@@ -341,3 +341,31 @@ test("buildNode preserves richer metadata for graph inspection", () => {
   assert.equal(node.abstract, "A short abstract for graph inspection.");
   assert.deepEqual(node.authors, ["Ada Lovelace", "Alan Turing"]);
 });
+
+test("guide includes companion learning resources beyond papers", () => {
+  const rootNode = {
+    id: "root",
+    title: "Quantum Computing in the NISQ Era and Beyond",
+    year: 2018,
+    query: "quantum computing"
+  };
+
+  const guide = __private.buildGuide(
+    [
+      rootNode,
+      {
+        id: "overview",
+        title: "Quantum Computing: Vision and Challenges",
+        year: 2017,
+        depth: 1,
+        authors: ["Overview Author"]
+      }
+    ],
+    rootNode
+  );
+
+  assert.ok(Array.isArray(guide.companionResources));
+  assert.ok(guide.companionResources.length >= 4);
+  assert.ok(guide.companionResources.some((resource) => resource.type === "video"));
+  assert.ok(guide.companionResources.some((resource) => resource.label === "Google Scholar"));
+});

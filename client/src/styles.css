@@ -1083,6 +1083,62 @@ button:disabled {
   line-height: 1.5;
 }
 
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.resource-group-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.resource-group-block {
+  display: grid;
+  gap: 10px;
+}
+
+.resource-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.resource-group-badge {
+  background: rgba(255, 221, 177, 0.16);
+}
+
+.resource-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 15px;
+  border-radius: 18px;
+  text-decoration: none;
+  color: #2d3748;
+  background: rgba(255, 251, 245, 0.9);
+  border: 1px solid rgba(182, 162, 139, 0.2);
+  box-shadow: 0 14px 28px -24px rgba(18, 10, 31, 0.55);
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.resource-card:hover,
+.resource-card:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(83, 120, 178, 0.34);
+  background: rgba(255, 253, 248, 0.96);
+}
+
+.resource-card strong {
+  font-size: 0.98rem;
+  line-height: 1.3;
+}
+
+.resource-card span:last-child {
+  color: #6a5f57;
+  line-height: 1.45;
+}
+
 .guide-plan,
 .plan-section {
   display: grid;

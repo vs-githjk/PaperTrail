@@ -765,6 +765,15 @@ function buildFallbackTree(paper) {
   });
 
   const readingPlan = buildReadingPlan(suggestedAncestors, { queryProfile });
+  const companionResources = buildCompanionResources(
+    {
+      id: rootId,
+      title: rootTitle,
+      query: paper?.query || paper?.title || rootTitle
+    },
+    suggestedAncestors,
+    queryProfile
+  );
 
   return {
     data: {
@@ -779,12 +788,121 @@ function buildFallbackTree(paper) {
           summary:
             "PaperTrail could not fetch live citation data, so this is a placeholder reading path to keep exploration moving.",
           recommendedOrder: suggestedAncestors,
-          readingPlan
+          readingPlan,
+          companionResources
         },
         note: "Live citation data was unavailable, so a placeholder ancestor view was generated."
       }
     }
   };
+}
+
+function buildCompanionResources(rootNode, prioritized = [], queryProfile = null) {
+  const baseTopic = String(queryProfile?.normalized || rootNode?.query || rootNode?.title || "").trim();
+  const seedTitle = String(rootNode?.title || baseTopic || "paper").trim();
+  const firstBackground = prioritized[0]?.title ? String(prioritized[0].title).trim() : "";
+  const seedUrl = rootNode?.url || (rootNode?.doi ? `https://doi.org/${rootNode.doi}` : "");
+
+  if (!baseTopic && !seedTitle) return [];
+
+  const resources = [
+    seedUrl
+      ? {
+          id: "seed-source",
+          type: "paper",
+          group: "read",
+          label: "Open current seed paper",
+          description: "Jump straight to the seed paper source before branching into companion material.",
+          url: seedUrl,
+          audience: "core"
+        }
+      : null,
+    {
+      id: "youtube-overview",
+      type: "video",
+      group: "watch",
+      label: "YouTube overview",
+      description: "A quick explainer video to build intuition before diving into the papers.",
+      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${baseTopic || seedTitle} explained`)}`,
+      audience: "beginner"
+    },
+    {
+      id: "youtube-paper",
+      type: "video",
+      group: "watch",
+      label: "Paper walkthrough",
+      description: "Search for talks, lectures, or explainers focused on the seed paper itself.",
+      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${seedTitle} paper explained`)}`,
+      audience: "guided"
+    },
+    {
+      id: "course-lecture",
+      type: "video",
+      group: "watch",
+      label: "Lecture or course clip",
+      description: "Find a university-style lecture that teaches the topic more slowly and systematically.",
+      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${baseTopic || seedTitle} lecture course`)}`,
+      audience: "beginner"
+    },
+    {
+      id: "google-scholar",
+      type: "search",
+      group: "explore",
+      label: "Google Scholar",
+      description: "Broaden the reading list with citation trails, related work, and follow-up papers.",
+      url: `https://scholar.google.com/scholar?q=${encodeURIComponent(seedTitle)}`,
+      audience: "academic"
+    },
+    {
+      id: "wiki-context",
+      type: "reference",
+      group: "reference",
+      label: "Background reference",
+      description: "A quick general reference pass to orient yourself around the core topic.",
+      url: `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(baseTopic || seedTitle)}`,
+      audience: "context"
+    },
+    {
+      id: "arxiv-topic",
+      type: "search",
+      group: "explore",
+      label: "arXiv topic search",
+      description: "Find more recent preprints, surveys, and tutorials around the same topic.",
+      url: `https://arxiv.org/search/?query=${encodeURIComponent(baseTopic || seedTitle)}&searchtype=all&abstracts=show&order=-announced_date_first&size=25`,
+      audience: "advanced"
+    },
+    {
+      id: "semantic-scholar-related",
+      type: "search",
+      group: "explore",
+      label: "Semantic Scholar related work",
+      description: "Use Semantic Scholar to branch into citations, references, and related papers from the same area.",
+      url: `https://www.semanticscholar.org/search?q=${encodeURIComponent(seedTitle)}`,
+      audience: "academic"
+    }
+  ].filter(Boolean);
+
+  if (firstBackground) {
+    resources.splice(2, 0, {
+      id: "background-video",
+      type: "video",
+      group: "watch",
+      label: "Background concept video",
+      description: "Use the top background paper title as a cue for a more focused explainer search.",
+      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${firstBackground} lecture`)}`,
+      audience: "guided"
+    });
+  }
+
+  const deduped = [];
+  const seenUrls = new Set();
+  for (const resource of resources) {
+    if (!resource?.url || seenUrls.has(resource.url)) continue;
+    seenUrls.add(resource.url);
+    deduped.push(resource);
+  }
+
+  return deduped.slice(0, 7);
 }
 
 function buildGuide(nodes, rootNode) {
@@ -830,6 +948,7 @@ function buildGuide(nodes, rootNode) {
     });
 
   const readingPlan = buildAncestorReadingPlan(prioritized, rootNode, queryProfile);
+  const companionResources = buildCompanionResources(rootNode, prioritized, queryProfile);
 
   return {
     title: `Start with ${rootNode.title}`,
@@ -838,7 +957,8 @@ function buildGuide(nodes, rootNode) {
         ? `PaperTrail found earlier papers that likely shaped ${rootNode.title}. Read the top recommendations in order, then return to the seed paper with more context.`
         : `PaperTrail identified ${rootNode.title} as the best seed paper, but did not find enough cited ancestors to rank a fuller reading path yet.`,
     recommendedOrder: prioritized,
-    readingPlan
+    readingPlan,
+    companionResources
   };
 }
 
@@ -919,6 +1039,7 @@ module.exports = {
   fetchExternalPapers: searchPapersByQuery,
   fetchAncestorTree,
   __private: {
+    buildCompanionResources,
     buildCandidateQueries,
     buildGuide,
     buildNode,

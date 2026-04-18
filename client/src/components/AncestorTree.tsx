@@ -6,6 +6,7 @@ function normalizeGraphData(data) {
   const stageMap = new Map();
   const reasonMap = new Map();
   const roleMap = new Map();
+  const routeIndexMap = new Map();
 
   if (guide && Array.isArray(guide.readingPlan)) {
     for (const section of guide.readingPlan) {
@@ -19,6 +20,7 @@ function normalizeGraphData(data) {
     guide.recommendedOrder.forEach((item, index) => {
       reasonMap.set(item.id, item.reason || "");
       roleMap.set(item.id, item.role || "");
+      routeIndexMap.set(item.id, index);
       if (!stageMap.has(item.id)) {
         stageMap.set(item.id, index === 0 ? "start_here" : "optional_supporting");
       }
@@ -57,18 +59,79 @@ function normalizeGraphData(data) {
     abstract: node.abstract || "",
     stage: stageMap.get(node.id) || (index === 0 ? "start_here" : "optional_supporting"),
     storyReason: reasonMap.get(node.id) || "",
-    storyRole: roleMap.get(node.id) || null
+    storyRole: roleMap.get(node.id) || null,
+    routeIndex: index === 0 ? -1 : routeIndexMap.has(node.id) ? routeIndexMap.get(node.id) : null
   }));
 
   const mappedLinks = links.map((edge) => ({
     source: typeof edge.source === "object" ? edge.source.id : edge.source,
-    target: typeof edge.target === "object" ? edge.target.id : edge.target
+    target: typeof edge.target === "object" ? edge.target.id : edge.target,
+    kind: "citation"
   }));
+
+  const lineageLinks = buildLineageLinks(mappedNodes, mappedLinks, guide);
 
   return {
     nodes: mappedNodes,
-    links: mappedLinks
+    links: lineageLinks
   };
+}
+
+function buildLineageLinks(nodes, rawLinks, guide) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const rootNode = nodes.find((node) => node.kind === "seed") || nodes[0] || null;
+  if (!rootNode) return rawLinks;
+
+  const recommendedIds = Array.isArray(guide?.recommendedOrder)
+    ? guide.recommendedOrder
+      .map((item) => item.id)
+      .filter((id) => id && id !== rootNode.id && byId.has(id))
+    : [];
+
+  const uniqueRecommendedIds = [...new Set(recommendedIds)];
+  const attachedIds = new Set([rootNode.id]);
+  const nextLinks = [];
+  const seenPairs = new Set();
+
+  const pushLink = (source, target, kind = "lineage") => {
+    if (!source || !target || source === target) return;
+    const key = `${source}->${target}`;
+    if (seenPairs.has(key)) return;
+    seenPairs.add(key);
+    nextLinks.push({ source, target, kind });
+    attachedIds.add(target);
+  };
+
+  if (uniqueRecommendedIds.length > 0) {
+    pushLink(rootNode.id, uniqueRecommendedIds[0], "lineage");
+    for (let index = 1; index < uniqueRecommendedIds.length; index += 1) {
+      pushLink(uniqueRecommendedIds[index - 1], uniqueRecommendedIds[index], "lineage");
+    }
+  }
+
+  for (const node of nodes) {
+    if (node.id === rootNode.id || attachedIds.has(node.id)) continue;
+
+    const rawParent = rawLinks.find((link) => link.target === node.id && byId.has(link.source) && attachedIds.has(link.source));
+    if (rawParent) {
+      pushLink(rawParent.source, node.id, "context");
+      continue;
+    }
+
+    const candidates = [...attachedIds]
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .sort((left, right) => {
+        const depthDelta = (right.depth || 0) - (left.depth || 0);
+        if (depthDelta !== 0) return depthDelta;
+        return (right.year || 0) - (left.year || 0);
+      });
+
+    const stageMatched = candidates.find((candidate) => (candidate.depth || 0) < (node.depth || 0));
+    pushLink((stageMatched || byId.get(uniqueRecommendedIds[uniqueRecommendedIds.length - 1]) || rootNode).id, node.id, "context");
+  }
+
+  return nextLinks.length > 0 ? nextLinks : rawLinks;
 }
 
 function getStageColor(stage, isSeed = false) {
@@ -94,6 +157,13 @@ function getNodeHref(node) {
   if (node?.paperId) {
     return `https://www.semanticscholar.org/paper/${node.paperId}`;
   }
+  return null;
+}
+
+function getRouteBadge(node) {
+  if (!node) return null;
+  if (node.kind === "seed") return "S";
+  if (Number.isInteger(node.routeIndex) && node.routeIndex >= 0) return String(node.routeIndex + 1);
   return null;
 }
 
@@ -174,6 +244,8 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
             height={height}
             graphData={graph}
             backgroundColor="#f4f7fb"
+            dagMode="lr"
+            dagLevelDistance={180}
             cooldownTicks={160}
             d3AlphaDecay={0.035}
             d3VelocityDecay={0.22}
@@ -182,6 +254,11 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
             linkColor={(link) => {
               const targetId = typeof link.target === "object" ? link.target.id : link.target;
               const sourceId = typeof link.source === "object" ? link.source.id : link.source;
+              if (link.kind === "lineage") {
+                return sourceId === selectedNodeId || targetId === selectedNodeId
+                  ? "rgba(83, 120, 178, 0.85)"
+                  : "rgba(83, 120, 178, 0.55)";
+              }
               if (sourceId === selectedNodeId || targetId === selectedNodeId) {
                 return "rgba(69, 95, 136, 0.55)";
               }
@@ -190,13 +267,20 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
             linkWidth={(link) => {
               const sourceId = typeof link.source === "object" ? link.source.id : link.source;
               const targetId = typeof link.target === "object" ? link.target.id : link.target;
+              if (link.kind === "lineage") {
+                return sourceId === selectedNodeId || targetId === selectedNodeId ? 3 : 2.2;
+              }
               return sourceId === selectedNodeId || targetId === selectedNodeId ? 1.8 : 1;
             }}
-            linkCurvature={0.18}
+            linkCurvature={(link) => (link.kind === "lineage" ? 0.04 : 0.12)}
+            linkDirectionalArrowLength={(link) => (link.kind === "lineage" ? 5 : 0)}
+            linkDirectionalArrowRelPos={1}
+            linkDirectionalArrowColor={(link) => (link.kind === "lineage" ? "rgba(83, 120, 178, 0.8)" : "transparent")}
             nodeCanvasObject={(node, ctx, globalScale) => {
               const isSelected = node.id === selectedNodeId;
               const isHovered = node.id === hoveredNodeId;
-              const radius = node.kind === "seed" ? 9 : node.depth >= 2 ? 4.5 : 6;
+              const isRouteNode = Number.isInteger(node.routeIndex) && node.routeIndex >= 0;
+              const radius = node.kind === "seed" ? 9.5 : isRouteNode ? 7 : node.depth >= 2 ? 4.5 : 6;
 
               if (isSelected) {
                 ctx.beginPath();
@@ -215,23 +299,41 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
               ctx.lineWidth = isSelected ? 2.2 : node.kind === "seed" ? 1.2 : 1;
               ctx.stroke();
 
-              if (node.kind === "seed" || isSelected || isHovered) {
-                const fontSize = (node.kind === "seed" ? 13 : 11) / globalScale;
+              const routeBadge = getRouteBadge(node);
+
+              if (routeBadge) {
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, Math.max(radius - 1.75, 3.4), 0, 2 * Math.PI, false);
+                ctx.fillStyle = node.kind === "seed" ? "#f7f6f2" : "rgba(245, 248, 255, 0.95)";
+                ctx.fill();
+                ctx.font = `${(node.kind === "seed" ? 8.8 : 8.2) / globalScale}px Inter, sans-serif`;
+                ctx.fillStyle = node.kind === "seed" ? "#39537c" : "#2f4566";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(routeBadge, node.x, node.y + 0.1 / globalScale);
+                ctx.textAlign = "left";
+                ctx.textBaseline = "alphabetic";
+              }
+
+              if (node.kind === "seed" || isSelected || isHovered || isRouteNode) {
+                const fontSize = (node.kind === "seed" ? 13 : isRouteNode ? 11.4 : 11) / globalScale;
                 const lineHeight = 13 / globalScale;
                 const labelX = node.x + radius + 8;
                 const labelY = node.y - (node.kind === "seed" ? lineHeight * 0.5 : 0);
                 const labelWidth = 150 / globalScale;
 
-                ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+                ctx.fillStyle = isRouteNode
+                  ? "rgba(247, 250, 255, 0.97)"
+                  : "rgba(255, 255, 255, 0.92)";
                 const textWidth = Math.min(labelWidth, Math.max(70 / globalScale, ctx.measureText(node.title || "Node").width + 16 / globalScale));
-                const boxHeight = node.kind === "seed" || isSelected ? 30 / globalScale : 18 / globalScale;
+                const boxHeight = node.kind === "seed" || isSelected || isRouteNode ? 30 / globalScale : 18 / globalScale;
                 ctx.fillRect(labelX - 6 / globalScale, labelY - 10 / globalScale, textWidth + 12 / globalScale, boxHeight);
 
                 ctx.font = `${fontSize}px Inter, sans-serif`;
                 ctx.fillStyle = "#2b3437";
                 wrapLabel(ctx, node.title || "Seed", labelX, labelY, labelWidth, lineHeight);
 
-                if ((node.kind === "seed" || isSelected) && node.year) {
+                if ((node.kind === "seed" || isSelected || isRouteNode) && node.year) {
                   ctx.font = `${9 / globalScale}px Inter, sans-serif`;
                   ctx.fillStyle = "#6d7880";
                   ctx.fillText(String(node.year), labelX, labelY + lineHeight * 1.8);
@@ -262,7 +364,7 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
         <p className="insight-title">Knowledge Insight</p>
         <p>
           {hasGraph
-            ? `${graph.links.length} related branches found in this lineage preview. Click a node to inspect its upstream context.`
+            ? "The numbered path shows the suggested progression through the lineage. Side branches add supporting context around that main route."
             : "Lineage details will appear here once a tree is built from a paper."}
         </p>
       </div>

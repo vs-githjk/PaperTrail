@@ -106,6 +106,19 @@ function getStageLabel(stage) {
   }
 }
 
+function getResourceGroupLabel(group) {
+  switch (group) {
+    case "watch":
+      return "Watch";
+    case "reference":
+      return "Reference";
+    case "read":
+      return "Read";
+    default:
+      return "Explore";
+  }
+}
+
 function formatSessionTime(value) {
   if (!value) return "Saved recently";
   const date = new Date(value);
@@ -154,6 +167,17 @@ export default function App() {
   );
 
   const guide = graphData?.data?.meta?.guide ?? graphData?.meta?.guide ?? null;
+  const companionResources = Array.isArray(guide?.companionResources) ? guide.companionResources : [];
+  const companionResourceGroups = useMemo(
+    () =>
+      companionResources.reduce((groups, resource) => {
+        const group = resource.group || "explore";
+        if (!groups[group]) groups[group] = [];
+        groups[group].push(resource);
+        return groups;
+      }, {}),
+    [companionResources]
+  );
   const isLoggedIn = Boolean(currentUser && authToken);
   const savedPaperKeys = new Set(
     workspace.recentPapers.map((paper) => String(paper.externalId || paper.paperId || paper.id || paper.title || ""))
@@ -1068,6 +1092,48 @@ export default function App() {
                   <div className="guide-card agentic-card">
                     <h3>{guide.title}</h3>
                     <p>{guide.summary}</p>
+                  </div>
+                ) : null}
+
+                {companionResources.length > 0 ? (
+                  <div className="guide-card agentic-card">
+                    <h3>Companion Learning Resources</h3>
+                    <p>
+                      PaperTrail can also point you to videos, background references, and broader searches so you can
+                      build intuition before or between papers.
+                    </p>
+                    <div className="resource-group-stack">
+                      {Object.entries(companionResourceGroups).map(([group, items]) => (
+                        <div key={group} className="resource-group-block">
+                          <div className="resource-group-header">
+                            <span className="canvas-badge resource-group-badge">{getResourceGroupLabel(group)}</span>
+                          </div>
+                          <div className="resource-grid">
+                            {items.map((resource) => (
+                              <a
+                                key={resource.id}
+                                className="resource-card"
+                                href={resource.url}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <span className="mini-badge">
+                                  {resource.type === "video"
+                                    ? "Video"
+                                    : resource.type === "reference"
+                                      ? "Reference"
+                                      : resource.type === "paper"
+                                        ? "Paper"
+                                        : "Search"}
+                                </span>
+                                <strong>{resource.label}</strong>
+                                <span>{resource.description}</span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
 
