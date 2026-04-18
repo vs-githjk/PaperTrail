@@ -119,6 +119,27 @@ function getResourceGroupLabel(group) {
   }
 }
 
+function getRouteStepLabel(node, totalSteps) {
+  if (!node) return "No route selected";
+  if (Number.isInteger(node.routeIndex) && node.routeIndex >= 0 && totalSteps > 0) {
+    return `Step ${node.routeIndex + 1} of ${totalSteps}`;
+  }
+  if (node.kind === "seed") return "Current seed";
+  return "Supporting context";
+}
+
+function getSeedGuideCopy(paper, isActive = false) {
+  if (!paper) return "Use this to redraw the map from a different starting point.";
+  if (isActive) return "This is the paper currently driving the route shown in the map.";
+  if (paper.matchReason) return paper.matchReason;
+  if (paper.role === "overview") return "Best if you want broad context before diving into specifics.";
+  if (paper.role === "seminal") return "Best if you want the older foundational work first.";
+  if (paper.role === "starting_point" || paper.role === "seed") {
+    return "Best if you want a direct first paper to anchor the route.";
+  }
+  return "Use this to redraw the map from a different starting point.";
+}
+
 function formatSessionTime(value) {
   if (!value) return "Saved recently";
   const date = new Date(value);
@@ -158,6 +179,7 @@ export default function App() {
   const [trailSaved, setTrailSaved] = useState(false);
   const [error, setError] = useState("");
   const [sessionHydrated, setSessionHydrated] = useState(false);
+  const [routeTransitioning, setRouteTransitioning] = useState(false);
   const treeRestoreRef = useRef(null);
   const handlePaperClickRef = useRef(null);
 
@@ -167,6 +189,7 @@ export default function App() {
   );
 
   const guide = graphData?.data?.meta?.guide ?? graphData?.meta?.guide ?? null;
+  const routeSteps = Array.isArray(guide?.recommendedOrder) ? guide.recommendedOrder : [];
   const companionResources = Array.isArray(guide?.companionResources) ? guide.companionResources : [];
   const companionResourceGroups = useMemo(
     () =>
@@ -182,6 +205,13 @@ export default function App() {
   const savedPaperKeys = new Set(
     workspace.recentPapers.map((paper) => String(paper.externalId || paper.paperId || paper.id || paper.title || ""))
   );
+
+  useEffect(() => {
+    if (!selectedPaperId || loadingTree) return undefined;
+    setRouteTransitioning(true);
+    const timer = setTimeout(() => setRouteTransitioning(false), 520);
+    return () => clearTimeout(timer);
+  }, [selectedPaperId, loadingTree, graphData]);
 
   function getAuthHeaders(extra = {}) {
     if (!authToken) return extra;
@@ -961,7 +991,34 @@ export default function App() {
                   </p>
                 </header>
 
-                <section className="tree-hero agentic-card">
+                <div className="guide-card agentic-card quickstart-card">
+                  <h3>How To Use This Map</h3>
+                  <div className="quickstart-grid">
+                    <div className="quickstart-step">
+                      <span className="quickstart-index">1</span>
+                      <div>
+                        <strong>Follow the numbered route first</strong>
+                        <p>Those steps are the recommended reading path through the lineage.</p>
+                      </div>
+                    </div>
+                    <div className="quickstart-step">
+                      <span className="quickstart-index">2</span>
+                      <div>
+                        <strong>Use side branches as context</strong>
+                        <p>They are useful supporting papers, but not the first things to read.</p>
+                      </div>
+                    </div>
+                    <div className="quickstart-step">
+                      <span className="quickstart-index">3</span>
+                      <div>
+                        <strong>Click any node to inspect it</strong>
+                        <p>The inspector explains why it matters, where it fits, and lets you re-seed the map.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <section className={routeTransitioning ? "tree-hero agentic-card route-transitioning" : "tree-hero agentic-card"}>
                   <div className="tree-hero-toolbar">
                     <div>
                       <p className="meta-label">Current seed</p>
@@ -1002,7 +1059,12 @@ export default function App() {
                     </div>
                   ) : null}
                   <div className="tree-explorer-layout">
-                    <div className="tree-stage">
+                    <div className={routeTransitioning ? "tree-stage route-transitioning" : "tree-stage"}>
+                      <div className="tree-stage-legend">
+                        <span className="legend-pill legend-pill-route">Main route</span>
+                        <span className="legend-pill legend-pill-context">Supporting context</span>
+                        <span className="legend-copy">Follow the bright numbered path first.</span>
+                      </div>
                       {loadingTree ? <p className="tree-loading-copy">Building ancestor tree...</p> : null}
                       {!loadingTree ? (
                         <AncestorTree
@@ -1013,7 +1075,7 @@ export default function App() {
                       ) : null}
                     </div>
 
-                    <aside className="node-inspector agentic-card">
+                    <aside className={routeTransitioning ? "node-inspector agentic-card route-transitioning" : "node-inspector agentic-card"}>
                     <p className="meta-label">Node Inspector</p>
                     <h4>{focusedNode?.title || "Select a node in the map"}</h4>
                     <p className="node-inspector-copy">
@@ -1021,6 +1083,16 @@ export default function App() {
                         ? "Open the paper source, inspect its place in the lineage, or promote it into a fresh seed."
                         : "Click any node in the map to inspect it here. The graph is meant to be explored, not just viewed."}
                     </p>
+                    <div className="inspector-hint">
+                      <span className="meta-label">Reading tip</span>
+                      <p>
+                        {focusedNode && Number.isInteger(focusedNode.routeIndex) && focusedNode.routeIndex >= 0
+                          ? "This node is part of the main suggested route, so it is worth reading in sequence."
+                          : focusedNode?.kind === "seed"
+                            ? "This is the current seed paper. Read around it, then return to it with more context."
+                            : "This node is supporting context. Use it to clarify background, not necessarily as your first read."}
+                      </p>
+                    </div>
                     <div className="node-inspector-facts">
                       <div>
                         <span>Reading stage</span>
@@ -1029,6 +1101,10 @@ export default function App() {
                       <div>
                         <span>Role</span>
                         <strong>{focusedNode?.kind === "seed" ? "Current seed" : "Ancestor node"}</strong>
+                      </div>
+                      <div>
+                        <span>Route step</span>
+                        <strong>{getRouteStepLabel(focusedNode, routeSteps.length)}</strong>
                       </div>
                       <div>
                         <span>Year</span>
@@ -1095,6 +1171,24 @@ export default function App() {
                   </div>
                 ) : null}
 
+                {routeSteps.length > 0 ? (
+                  <div className={routeTransitioning ? "guide-card agentic-card route-transitioning" : "guide-card agentic-card"}>
+                    <h3>Recommended Route</h3>
+                    <p>Follow this numbered path first, then branch into the supporting context around it.</p>
+                    <div className={routeTransitioning ? "route-step-list route-transitioning" : "route-step-list"}>
+                      {routeSteps.map((step, index) => (
+                        <div key={step.id || `${step.title}-${index}`} className="route-step-card">
+                          <span className="route-step-index">{index + 1}</span>
+                          <div className="route-step-copy">
+                            <strong>{step.title}</strong>
+                            <span>{step.reason || step.roleLabel || "Suggested next step in the lineage"}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 {companionResources.length > 0 ? (
                   <div className="guide-card agentic-card">
                     <h3>Companion Learning Resources</h3>
@@ -1134,6 +1228,16 @@ export default function App() {
                         </div>
                       ))}
                     </div>
+                    <div className="copilot-teaser">
+                      <div>
+                        <span className="canvas-badge copilot-badge">Ask PaperTrail</span>
+                        <strong>Coming soon: an in-app guide that explains this route in plain English.</strong>
+                        <p>
+                          We’ll add a focused copilot later for questions about the current map, the papers in it, and
+                          what to read next.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
 
@@ -1160,6 +1264,10 @@ export default function App() {
             </button>
             <h2>Starting Points</h2>
             <p className="panel-intro">Pick a seed to redraw the lineage. Use open to jump to the paper source.</p>
+            <p className="panel-microcopy">
+              The active card is the seed currently shaping the route. Switching cards redraws the map around a new
+              starting point.
+            </p>
           </div>
           <div className="starting-points-scroll">
             <ul className="results compact-results">
@@ -1178,10 +1286,11 @@ export default function App() {
                         <span className="mini-badge">
                           {getRoleLabel(paper) || "Best Starting Paper"}
                         </span>
+                        {isActive ? <span className="seed-status-badge">Current route seed</span> : null}
                         <strong>
                           {index + 1}. {getPaperTitle(paper)}
                         </strong>
-                        {paper.matchReason ? <span>{paper.matchReason}</span> : null}
+                        <span className="seed-guide-copy">{getSeedGuideCopy(paper, isActive)}</span>
                       </button>
                       <div className="paper-card-actions">
                         <button
