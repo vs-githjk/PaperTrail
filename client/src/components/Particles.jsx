@@ -117,25 +117,40 @@ export default function Particles({
     const camera = new Camera(gl, { fov: 15 });
     camera.position.set(0, 0, cameraDistance);
 
+    const bounds = { left: 0, top: 0, width: 1, height: 1 };
+
+    const syncBounds = () => {
+      const rect = container.getBoundingClientRect();
+      bounds.left = rect.left;
+      bounds.top = rect.top;
+      bounds.width = Math.max(1, rect.width);
+      bounds.height = Math.max(1, rect.height);
+    };
+
     const resize = () => {
       const width = container.clientWidth;
       const height = container.clientHeight;
       renderer.setSize(width, height);
       camera.perspective({ aspect: gl.canvas.width / gl.canvas.height });
+      syncBounds();
     };
 
+    let moveRaf = 0;
     const handleMouseMove = (event) => {
-      const rect = container.getBoundingClientRect();
-      const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      const y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
-      mouseRef.current = { x, y };
+      cancelAnimationFrame(moveRaf);
+      moveRaf = requestAnimationFrame(() => {
+        moveRaf = 0;
+        const x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+        const y = -(((event.clientY - bounds.top) / bounds.height) * 2 - 1);
+        mouseRef.current = { x, y };
+      });
     };
 
-    window.addEventListener("resize", resize, false);
+    window.addEventListener("resize", resize, { passive: true });
     resize();
 
     if (moveParticlesOnHover) {
-      container.addEventListener("mousemove", handleMouseMove);
+      container.addEventListener("mousemove", handleMouseMove, { passive: true });
     }
 
     const positions = new Float32Array(particleCount * 3);
@@ -186,6 +201,10 @@ export default function Particles({
     let animationFrameId;
     let lastTime = performance.now();
     let elapsed = 0;
+    let curHoverX = 0;
+    let curHoverY = 0;
+
+    const lerp = (a, b, t) => a + (b - a) * t;
 
     const update = (time) => {
       animationFrameId = requestAnimationFrame(update);
@@ -196,11 +215,17 @@ export default function Particles({
       program.uniforms.uTime.value = elapsed * 0.001;
 
       if (moveParticlesOnHover) {
-        particles.position.x = -mouseRef.current.x * particleHoverFactor;
-        particles.position.y = -mouseRef.current.y * particleHoverFactor;
+        const tx = -mouseRef.current.x * particleHoverFactor;
+        const ty = -mouseRef.current.y * particleHoverFactor;
+        curHoverX = lerp(curHoverX, tx, 0.12);
+        curHoverY = lerp(curHoverY, ty, 0.12);
+        particles.position.x = curHoverX;
+        particles.position.y = curHoverY;
       } else {
-        particles.position.x = 0;
-        particles.position.y = 0;
+        curHoverX = lerp(curHoverX, 0, 0.12);
+        curHoverY = lerp(curHoverY, 0, 0.12);
+        particles.position.x = curHoverX;
+        particles.position.y = curHoverY;
       }
 
       if (!disableRotation) {
@@ -216,6 +241,7 @@ export default function Particles({
 
     return () => {
       window.removeEventListener("resize", resize);
+      cancelAnimationFrame(moveRaf);
       if (moveParticlesOnHover) {
         container.removeEventListener("mousemove", handleMouseMove);
       }

@@ -132,29 +132,33 @@ function buildLineageLinks(nodes, rawLinks, guide) {
 }
 
 function getStageColor(stage, isSeed = false) {
-  if (isSeed) return "#39537c";
+  if (isSeed) return "#6d28d9";
   switch (stage) {
     case "start_here":
-      return "#5378b2";
+      return "#8b5cf6";
     case "foundational_background":
-      return "#4d6d63";
+      return "#7c3aed";
     case "broader_overview":
-      return "#7b6aa7";
+      return "#a78bfa";
     default:
-      return "#a6b3c2";
+      return "#c4b5fd";
   }
 }
 
+/** Seed = the paper you searched; shown as ★ so it is not mistaken for a step letter. */
 function getRouteBadge(node) {
-  if (!node) return null;
-  if (node.kind === "seed") return "S";
+  if (!node) return "◦";
+  if (node.kind === "seed") return "★";
   if (Number.isInteger(node.routeIndex) && node.routeIndex >= 0) return String(node.routeIndex + 1);
-  return null;
+  return "◦";
 }
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
+
+/** Collapsed on-canvas hitbox (badge); edges anchor to this so paths stay visible between nodes. */
+const ANCHOR_SIZE = 40;
 
 function buildTreeLayout(graph, width, height) {
   const rootNode = graph.nodes.find((node) => node.kind === "seed") || graph.nodes[0] || null;
@@ -180,20 +184,23 @@ function buildTreeLayout(graph, width, height) {
   const centerX = safeWidth / 2;
   const trunkGap = clamp((height - topPadding - bottomPadding) / Math.max(trunk.length - 1, 1), 96, 132);
 
-  const addCard = (node, x, y, variant = "context") => {
-    const dims = variant === "seed"
-      ? { width: clamp(safeWidth * 0.34, 190, 320), height: 84 }
-      : variant === "route"
-        ? { width: clamp(safeWidth * 0.28, 170, 268), height: 72 }
-        : { width: clamp(safeWidth * 0.24, 150, 220), height: 58 };
+  const addCard = (node, x, y, variant, popoverSide) => {
+    const popoverWidth =
+      variant === "seed"
+        ? clamp(safeWidth * 0.34, 190, 320)
+        : variant === "route"
+          ? clamp(safeWidth * 0.28, 170, 268)
+          : clamp(safeWidth * 0.24, 150, 220);
 
     const card = {
       ...node,
       variant,
       x,
       y,
-      width: dims.width,
-      height: dims.height
+      width: ANCHOR_SIZE,
+      height: ANCHOR_SIZE,
+      popoverWidth,
+      popoverSide
     };
     cards.push(card);
     positions.set(node.id, card);
@@ -203,7 +210,12 @@ function buildTreeLayout(graph, width, height) {
   trunk.forEach((node, index) => {
     const isSeed = node.id === rootNode.id;
     const routeLean = isSeed ? 0 : (index % 2 === 0 ? -18 : 18);
-    addCard(node, centerX + routeLean, topPadding + index * trunkGap, isSeed ? "seed" : "route");
+    const x = centerX + routeLean;
+    let popSide;
+    if (x < safeWidth / 2 - 12) popSide = "right";
+    else if (x > safeWidth / 2 + 12) popSide = "left";
+    else popSide = index % 2 === 0 ? "right" : "left";
+    addCard(node, x, topPadding + index * trunkGap, isSeed ? "seed" : "route", popSide);
   });
 
   const contextByParent = new Map();
@@ -223,10 +235,14 @@ function buildTreeLayout(graph, width, height) {
       const branchRank = Math.floor(index / 2);
       const xOffset = clamp(safeWidth * 0.21, 96, 190) + branchRank * clamp(safeWidth * 0.08, 32, 68);
       const yOffset = branchRank * 18;
-      const branchBaseY = parentCard.y + (parentCard.variant === "seed" ? -26 : 10) + yOffset;
+      const branchBaseY = parentCard.y + (parentCard.variant === "seed" ? -18 : 8) + yOffset;
       const x = clamp(parentCard.x + side * xOffset, 120, safeWidth - 120);
       const y = clamp(branchBaseY, topPadding + 30, height - 70);
-      addCard(node, x, y, "context");
+      let popSide;
+      if (x < safeWidth / 2 - 12) popSide = "right";
+      else if (x > safeWidth / 2 + 12) popSide = "left";
+      else popSide = side < 0 ? "right" : "left";
+      addCard(node, x, y, "context", popSide);
     });
   }
 
@@ -255,24 +271,6 @@ function linkPath(edge) {
   const controlSpread = Math.abs(endX - startX) * 0.28;
 
   return `M ${startX} ${startY} C ${startX} ${midY}, ${endX - Math.sign(endX - startX || 1) * controlSpread} ${midY}, ${endX} ${endY}`;
-}
-
-function renderCardLabel(title) {
-  const words = String(title || "").split(/\s+/).filter(Boolean);
-  const lines = [];
-  let current = "";
-
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length <= 26) {
-      current = next;
-    } else {
-      if (current) lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines.slice(0, 3);
 }
 
 export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
@@ -313,6 +311,64 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
       <div ref={containerRef} className="ancestor-canvas-shell">
         {hasGraph ? (
           <div className="ancestor-tree-surface" style={{ minHeight: height }}>
+            <div className="ancestor-tree-card-layer">
+              {layout.cards.map((card) => {
+                const isSelected = card.id === selectedNodeId;
+                const marker = getRouteBadge(card);
+                const graphNode = graph.nodes.find((node) => node.id === card.id) || null;
+                const badgeAria =
+                  card.variant === "seed"
+                    ? `Your starting paper: ${card.title || "Untitled paper"}`
+                    : card.variant === "context"
+                      ? `Supporting context: ${card.title || "Untitled paper"}`
+                      : card.title
+                        ? `Main route, step ${marker}: ${card.title}`
+                        : "Paper node";
+                const popoverClass = [
+                  "tree-node-popover",
+                  "tree-node-card",
+                  card.variant === "seed" ? "tree-node-card-seed" : "",
+                  card.variant === "route" ? "tree-node-card-route" : "",
+                  card.variant === "context" ? "tree-node-card-context" : "",
+                  isSelected ? "tree-node-card-selected" : ""
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+
+                return (
+                  <div
+                    key={card.id}
+                    className={`tree-node-anchor tree-node-anchor-${card.variant} tree-node-popover-at-${card.popoverSide}${isSelected ? " is-selected" : ""}`}
+                    style={{
+                      left: `${card.x}px`,
+                      top: `${card.y}px`,
+                      "--tree-popover-width": `${card.popoverWidth}px`
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="tree-node-badge-btn"
+                      aria-label={badgeAria}
+                      title={card.variant === "seed" ? "Your starting paper (the one you searched)" : undefined}
+                      onClick={() => onNodeSelect?.(graphNode)}
+                    >
+                      {marker}
+                    </button>
+                    <div
+                      className={popoverClass}
+                      role="presentation"
+                      onClick={() => onNodeSelect?.(graphNode)}
+                    >
+                      <div className="tree-node-copy">
+                        <p className="tree-node-title">{card.title || "Untitled paper"}</p>
+                        {card.year ? <small>{card.year}</small> : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
             <svg className="ancestor-tree-svg" viewBox={`0 0 ${Math.max(width, 720)} ${height}`} aria-hidden="true">
               {layout.edges.map((edge) => (
                 <path
@@ -322,47 +378,6 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
                 />
               ))}
             </svg>
-
-            <div className="ancestor-tree-card-layer">
-              {layout.cards.map((card) => {
-                const isSelected = card.id === selectedNodeId;
-                const badge = getRouteBadge(card);
-                const lines = renderCardLabel(card.title);
-                const style = {
-                  width: `${card.width}px`,
-                  minHeight: `${card.height}px`,
-                  left: `${card.x}px`,
-                  top: `${card.y}px`,
-                  transform: "translate(-50%, -50%)"
-                };
-
-                const className = [
-                  "tree-node-card",
-                  card.variant === "seed" ? "tree-node-card-seed" : "",
-                  card.variant === "route" ? "tree-node-card-route" : "",
-                  card.variant === "context" ? "tree-node-card-context" : "",
-                  isSelected ? "tree-node-card-selected" : ""
-                ].filter(Boolean).join(" ");
-
-                return (
-                  <button
-                    key={card.id}
-                    type="button"
-                    className={className}
-                    style={style}
-                    onClick={() => onNodeSelect?.(graph.nodes.find((node) => node.id === card.id) || null)}
-                  >
-                    {badge ? <span className="tree-node-badge">{badge}</span> : null}
-                    <div className="tree-node-copy">
-                      {lines.map((line, index) => (
-                        <span key={`${card.id}-${index}`}>{line}</span>
-                      ))}
-                      {card.year ? <small>{card.year}</small> : null}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
           </div>
         ) : (
           <div className="ancestor-tree-empty" style={{ minHeight: height }}>
@@ -380,7 +395,7 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
         <p className="insight-title">Knowledge Insight</p>
         <p>
           {hasGraph
-            ? "The central trunk is the main route through the literature. Branches off the trunk are supporting context you can explore when you need more background."
+            ? "The ★ marker is your starting paper (the one you searched). Numbers are the main reading route; ◦ marks optional supporting context. Hover a marker to read the full title beside the path."
             : "Lineage details will appear here once a tree is built from a paper."}
         </p>
       </div>
