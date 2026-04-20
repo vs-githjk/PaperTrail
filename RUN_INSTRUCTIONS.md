@@ -86,9 +86,10 @@ In the frontend, enter one of:
 PaperTrail will:
 1. find candidate starting papers
 2. organize them into a staged reading plan
-3. let you choose a seed paper
-4. build a guided ancestor tree when available
-5. save recent trails and papers into the workspace when Postgres is available
+3. ask a few clarification questions for very broad prompts when needed
+4. let you choose or refine a seed paper
+5. build a guided ancestor tree when available
+6. save recent trails and papers into the workspace when Postgres is available
 
 ## Useful Commands
 
@@ -110,9 +111,21 @@ npm run build
 
 - Search is working and includes reading-plan metadata
 - Exact-title lookups are cleaner now and keep one main seed in `Start Here`
-- Broad-topic plans are staged, but retrieval quality is still being improved
-- Ancestor trees may fall back to placeholder guidance when live citation expansion is unavailable
+- Broad-topic searches now support a clarification flow and refined backend retrieval
+- Ancestor trees can expand adaptively beyond the base 3 learning layers when the seed is strong enough
+- Ancestor trees may still fall back to a synthesized learning tree when live citation expansion is unavailable
 - Recent research trails appear in the workspace view when local persistence is available
+
+## Current Handoff
+
+Latest pushed checkpoint:
+- branch: `main`
+- commit: `a80a349`
+
+Best next passes for a teammate:
+1. add semantic branch types to the tree
+2. keep improving clarification-aware broad-topic retrieval
+3. tune adaptive depth so stronger topics produce deeper trees more gracefully
 
 ## Main Docs
 

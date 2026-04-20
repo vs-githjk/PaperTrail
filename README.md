@@ -6,7 +6,8 @@ This branch is the current MVP:
 - Search by topic, paper title, DOI, arXiv link, or Semantic Scholar link
 - Review likely starting points for the topic
 - Generate a guided ancestor tree from the best seed paper
-- Render that tree as an interactive force graph in the browser
+- Refine broad topics with a short clarification step before choosing a seed
+- Render that tree as a layered guided ancestor map in the browser
 
 ## Current Stack
 
@@ -20,6 +21,8 @@ This branch is the current MVP:
 - `client/` contains the MVP UI for searching papers and rendering the ancestor graph.
 - `backend/` contains the API for search, health checks, and ancestor-tree generation.
 - `docker-compose.yml` starts Postgres, Redis, and Neo4j for local development.
+- Broad prompts such as `llms`, `rag`, or `iot` can trigger a clarification card so PaperTrail can pick a better seed.
+- The tree now uses learning layers such as `Current paper`, `Direct foundations`, and `Earlier foundations` instead of a generic graph-only view.
 
 The backend can run even if those local services are unavailable. In that case it falls back to live external search where possible.
 
@@ -44,6 +47,21 @@ Example ancestor-tree request body:
 
 The ancestor-tree response also includes lightweight guide metadata so the frontend can explain what to read first, not just draw the graph.
 The workspace endpoint returns recent saved papers plus recent research trails so the UI can feel persistent across sessions.
+
+## Latest Checkpoint
+
+Current pushed checkpoint on `main`:
+- branch: `main`
+- commit: `a80a349`
+- summary: `Improve PaperTrail broad-topic refinement and tree depth`
+
+This checkpoint includes:
+- clarification-aware broad-topic refinement
+- smarter backend retrieval for refined searches
+- adaptive tree depth for stronger seeds
+- richer fallback learning trees when live citation ancestry is weak
+- generation-band ancestor layout improvements
+- the refined-tree crash fix
 
 Progress across development passes is tracked in [PROJECT_PROGRESS.md](/Users/vidyutsriram/PaperTrail/PROJECT_PROGRESS.md:1).
 Practical local startup steps are documented in [RUN_INSTRUCTIONS.md](/Users/vidyutsriram/PaperTrail/RUN_INSTRUCTIONS.md:1).
@@ -100,11 +118,28 @@ The backend also supports managed-service env vars such as `DATABASE_URL`, `POST
 
 ## Near-Term Roadmap
 
-- Improve ancestor quality by ranking sources around broad topic intent, not only direct paper matches
+- Add semantic branch types so the tree distinguishes:
+  - overview branches
+  - foundational theory branches
+  - methodology branches
+  - applied/supporting branches
+- Improve broad-topic refinement further so prompts like `llms`, `agents`, and `rag` produce cleaner candidate pools
+- Make adaptive depth more quality-aware so strong topics can open into deeper trees without clutter
 - Persist reading plans and research trails more deeply instead of relying only on paper-level saves
 - Use Neo4j for stored graph relationships instead of on-demand-only tree building
 - Add caching for repeated searches and tree generation
-- Improve the guided reading experience beyond the current MVP heuristics
+
+## Teammate Next Passes
+
+If someone is picking up from the latest pushed `main`, the best next work is:
+1. `Branch semantics`
+Make the ancestor tree teach what each branch means, not just that it exists.
+2. `Broader-topic retrieval quality`
+Keep improving clarification-aware search so vague prompts produce better seed pools.
+3. `Adaptive depth tuning`
+Let deeper trees open only when source quality supports it.
+4. `Later`
+Only after the deterministic product logic is stronger: add a focused in-app copilot over PaperTrail’s own context.
 
 ## Later Idea
 

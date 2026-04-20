@@ -593,21 +593,75 @@ What is working well now:
 - The workbench ancestor panel and sidebar behavior respect empty-state and login boundaries
 
 What still needs work:
-- Better topic-intent reranking
+- Better semantic meaning inside the tree branches
+- Better broad-topic refinement for vague prompts like `llms`, `rag`, and `agents`
 - Better ancestor quality and reading-order explanations
 - Deeper persistence of papers, trails, and graph state
 - Stronger graph modeling in Neo4j
 - More test coverage across backend and frontend
 - A full live deployment and production smoke test
 
+## Pass 15: Broad-Topic Refinement And Adaptive Tree Depth
+
+### Goal
+
+Make PaperTrail materially better on broad prompts by:
+- asking a few narrowing questions before committing to a seed
+- using those answers to improve retrieval instead of only frontend ranking
+- letting stronger seeds open into deeper trees
+
+### Changes Made
+
+- Added a broad-topic clarification flow in the frontend for prompts such as `llms`
+- Added clarification-aware ranking and refined-tree actions in the workbench
+- Added clarification-aware backend search parameters:
+  - `focus`
+  - `material`
+  - `goal`
+- Taught backend query classification that one-word prompts like `llms`, `rag`, and `iot` can still be broad topics
+- Expanded broad-topic candidate query generation using clarification-aware query phrases and aliases
+- Added clarification-fit scoring to seed ranking
+- Added adaptive tree budgets so stronger seeds can expand more deeply
+- Improved tree generation bands and layout so learning layers read more clearly
+- Fixed the refined-tree runtime crash caused by the tree label gutter reference
+
+### Key Files
+
+- [backend/src/modules/papers/paper.controller.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.controller.js:1)
+- [backend/src/modules/papers/paper.service.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.service.js:1)
+- [backend/src/modules/papers/paper.external.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.external.js:1)
+- [backend/src/modules/papers/paper.external.test.js](/Users/vidyutsriram/PaperTrail/backend/src/modules/papers/paper.external.test.js:1)
+- [client/src/App.jsx](/Users/vidyutsriram/PaperTrail/client/src/App.jsx:1)
+- [client/src/components/AncestorTree.tsx](/Users/vidyutsriram/PaperTrail/client/src/components/AncestorTree.tsx:1)
+- [client/src/styles.css](/Users/vidyutsriram/PaperTrail/client/src/styles.css:1)
+- [README.md](/Users/vidyutsriram/PaperTrail/README.md:1)
+- [RUN_INSTRUCTIONS.md](/Users/vidyutsriram/PaperTrail/RUN_INSTRUCTIONS.md:1)
+
+### Verification
+
+- Backend tests passed with `npm test`: `29/29`
+- Frontend production build passed with `npm run build`
+- Local broad-topic checks improved for prompts such as:
+  - `llms`
+  - `iot`
+- Refined-tree crash reproduced and fixed via local runtime error boundary and follow-up patch
+
+### Remaining Weaknesses
+
+- Branches are still visually generic; they do not yet teach branch meaning
+- Clarification-aware retrieval is much better, but broad-topic candidate pools can still be noisy
+- Adaptive depth is now smarter, but still conservative and should be made more quality-aware
+- Live citation ancestry still depends on external source coverage when Neo4j is unavailable
+
 ## Next Best Step
 
-The next pass should focus on the actual live deployment:
-- create the Render backend stack
-- deploy the Vercel frontend project
-- set the final frontend and backend URLs
-- verify auth, search, tree generation, save-paper, and save-trail flows in production
-- decide whether Redis and Neo4j belong in the first public environment or a later infrastructure pass
+The next passes for a teammate picking up from `main` at `a80a349` should be:
+1. `Branch semantics`
+Make the tree explain what kind of understanding each branch gives the user.
+2. `Broader-topic retrieval quality`
+Keep tightening clarification-aware retrieval so vague prompts produce better candidate pools.
+3. `Adaptive depth tuning`
+Allow stronger topics to open into deeper trees without making weak topics noisy.
 
 ## Update Rule
 
