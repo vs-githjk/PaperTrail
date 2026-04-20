@@ -2083,13 +2083,13 @@ pre {
   text-align: left;
   color: var(--pt-ink);
   cursor: pointer;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
   transition:
     opacity var(--pt-move) var(--pt-ease),
     transform var(--pt-in) var(--pt-ease),
-    visibility var(--pt-in);
+    box-shadow var(--pt-resp) var(--pt-ease);
 }
 
 /* Popover to the right of the badge (toward canvas east) */
@@ -2097,17 +2097,14 @@ pre {
   left: calc(100% + 10px);
   right: auto;
   top: 50%;
-  transform: translateY(-50%) translateX(-8px) scale(0.94);
+  transform: translateY(-50%) translateX(0) scale(1);
   transform-origin: 0 50%;
 }
 
 .tree-node-popover-at-right:has(.tree-node-badge-btn:hover) .tree-node-popover,
 .tree-node-popover-at-right:has(.tree-node-popover:hover) .tree-node-popover,
 .tree-node-popover-at-right:focus-within .tree-node-popover {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(-50%) translateX(0) scale(1);
-  pointer-events: auto;
+  transform: translateY(-50%) translateX(0) scale(1.01);
 }
 
 /* Popover to the left of the badge (toward canvas west) */
@@ -2115,17 +2112,14 @@ pre {
   right: calc(100% + 10px);
   left: auto;
   top: 50%;
-  transform: translateY(-50%) translateX(8px) scale(0.94);
+  transform: translateY(-50%) translateX(0) scale(1);
   transform-origin: 100% 50%;
 }
 
 .tree-node-popover-at-left:has(.tree-node-badge-btn:hover) .tree-node-popover,
 .tree-node-popover-at-left:has(.tree-node-popover:hover) .tree-node-popover,
 .tree-node-popover-at-left:focus-within .tree-node-popover {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(-50%) translateX(0) scale(1);
-  pointer-events: auto;
+  transform: translateY(-50%) translateX(0) scale(1.01);
 }
 
 .tree-node-popover.tree-node-card {
@@ -2152,6 +2146,7 @@ pre {
   background: linear-gradient(180deg, var(--color-white) 0%, var(--color-purple-50) 100%);
   border-radius: 18px;
   padding: 10px 12px;
+  opacity: 0.96;
 }
 
 .tree-node-copy {
