@@ -38,7 +38,7 @@ class PaperService {
     }
   }
 
-  async searchPapers(searchText, limit, userId = null) {
+  async searchPapers(searchText, limit, userId = null, clarification = null) {
     if (!searchText || !searchText.trim()) return [];
     const normalizedLimit = Number(limit) > 0 ? Number(limit) : 20;
     const query = searchText.trim();
@@ -58,7 +58,7 @@ class PaperService {
       // Local DB may be unavailable during early local setup.
     }
 
-    return fetchExternalPapers(query, normalizedLimit);
+    return fetchExternalPapers(query, normalizedLimit, clarification);
   }
 
   async getAncestorTree(selection) {

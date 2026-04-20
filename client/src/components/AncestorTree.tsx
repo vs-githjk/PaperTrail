@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+const TREE_LEFT_GUTTER = 288;
+const TREE_RIGHT_GUTTER = 90;
+
 function normalizeGraphData(data) {
   const guide = data?.data?.meta?.guide || data?.meta?.guide || null;
   const stageMap = new Map();
@@ -79,54 +82,78 @@ function buildLineageLinks(nodes, rawLinks, guide) {
   const rootNode = nodes.find((node) => node.kind === "seed") || nodes[0] || null;
   if (!rootNode) return rawLinks;
 
-  const recommendedIds = Array.isArray(guide?.recommendedOrder)
-    ? guide.recommendedOrder
-      .map((item) => item.id)
-      .filter((id) => id && id !== rootNode.id && byId.has(id))
-    : [];
+  const coreIds = new Set(
+    Array.isArray(guide?.recommendedOrder)
+      ? guide.recommendedOrder.map((item) => item.id).filter((id) => id && id !== rootNode.id && byId.has(id))
+      : []
+  );
 
-  const uniqueRecommendedIds = [...new Set(recommendedIds)];
-  const attachedIds = new Set([rootNode.id]);
+  const orientCandidate = (link, node) => {
+    if (link.source === node.id && byId.has(link.target)) {
+      return { descendantId: link.target };
+    }
+    if (link.target === node.id && byId.has(link.source)) {
+      return { descendantId: link.source };
+    }
+    return null;
+  };
+
   const nextLinks = [];
   const seenPairs = new Set();
 
-  const pushLink = (source, target, kind = "lineage") => {
+  const pushLink = (source, target, kind = "context") => {
     if (!source || !target || source === target) return;
     const key = `${source}->${target}`;
     if (seenPairs.has(key)) return;
     seenPairs.add(key);
     nextLinks.push({ source, target, kind });
-    attachedIds.add(target);
   };
 
-  if (uniqueRecommendedIds.length > 0) {
-    for (let index = 1; index < uniqueRecommendedIds.length; index += 1) {
-      pushLink(uniqueRecommendedIds[index - 1], uniqueRecommendedIds[index], "lineage");
-    }
-    pushLink(uniqueRecommendedIds[uniqueRecommendedIds.length - 1], rootNode.id, "lineage");
-  }
-
-  for (const node of nodes) {
-    if (node.id === rootNode.id || attachedIds.has(node.id)) continue;
-
-    const rawParent = rawLinks.find((link) => link.target === node.id && byId.has(link.source) && attachedIds.has(link.source));
-    if (rawParent) {
-      pushLink(rawParent.source, node.id, "context");
-      continue;
-    }
-
-    const candidates = [...attachedIds]
-      .map((id) => byId.get(id))
+  const chooseDescendant = (node) => {
+    const candidates = rawLinks
+      .map((link) => orientCandidate(link, node))
       .filter(Boolean)
-      .sort((left, right) => {
-        const depthDelta = (right.depth || 0) - (left.depth || 0);
+      .map(({ descendantId }) => byId.get(descendantId))
+      .filter(Boolean)
+      .filter((candidate) => candidate.id !== node.id)
+      .filter((candidate) => (candidate.depth || 0) < (node.depth || 0));
+
+    if (candidates.length > 0) {
+      candidates.sort((left, right) => {
+        const depthDelta = (left.depth || 0) - (right.depth || 0);
         if (depthDelta !== 0) return depthDelta;
-        return (right.year || 0) - (left.year || 0);
+        const coreDelta = Number(coreIds.has(right.id)) - Number(coreIds.has(left.id));
+        if (coreDelta !== 0) return coreDelta;
+        return (right.influenceScore || 0) - (left.influenceScore || 0);
+      });
+      return candidates[0];
+    }
+
+    const previousDepth = nodes
+      .filter((candidate) => candidate.id !== node.id)
+      .filter((candidate) => (candidate.depth || 0) === Math.max((node.depth || 1) - 1, 0))
+      .sort((left, right) => {
+        const coreDelta = Number(coreIds.has(right.id)) - Number(coreIds.has(left.id));
+        if (coreDelta !== 0) return coreDelta;
+        return (right.influenceScore || 0) - (left.influenceScore || 0);
       });
 
-    const stageMatched = candidates.find((candidate) => (candidate.depth || 0) < (node.depth || 0));
-    pushLink((stageMatched || byId.get(uniqueRecommendedIds[uniqueRecommendedIds.length - 1]) || rootNode).id, node.id, "context");
-  }
+    return previousDepth[0] || rootNode;
+  };
+
+  nodes
+    .filter((node) => node.id !== rootNode.id)
+    .sort((left, right) => {
+      const depthDelta = (left.depth || 0) - (right.depth || 0);
+      if (depthDelta !== 0) return depthDelta;
+      const coreDelta = Number(coreIds.has(right.id)) - Number(coreIds.has(left.id));
+      if (coreDelta !== 0) return coreDelta;
+      return (right.influenceScore || 0) - (left.influenceScore || 0);
+    })
+    .forEach((node) => {
+      const descendant = chooseDescendant(node);
+      pushLink(node.id, descendant.id, coreIds.has(node.id) ? "lineage" : "context");
+    });
 
   return nextLinks.length > 0 ? nextLinks : rawLinks;
 }
@@ -145,16 +172,22 @@ function getStageColor(stage, isSeed = false) {
   }
 }
 
-/** Seed = the paper you searched; shown as ★ so it is not mistaken for a step letter. */
 function getRouteBadge(node) {
   if (!node) return "◦";
   if (node.kind === "seed") return "★";
-  if (Number.isInteger(node.routeIndex) && node.routeIndex >= 0) return String(node.routeIndex + 1);
+  if (Number.isInteger(node.routeIndex) && node.routeIndex >= 0) return "●";
   return "◦";
 }
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function labelForDepth(depth) {
+  if (depth <= 0) return "Current paper";
+  if (depth === 1) return "Direct foundations";
+  if (depth === 2) return "Earlier foundations";
+  return `Generation ${depth}`;
 }
 
 /** Collapsed on-canvas hitbox (badge); edges anchor to this so paths stay visible between nodes. */
@@ -165,24 +198,44 @@ function buildTreeLayout(graph, width, height) {
   if (!rootNode) return { cards: [], edges: [] };
 
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-  const routeNodes = graph.nodes
-    .filter((node) => Number.isInteger(node.routeIndex) && node.routeIndex >= 0)
-    .sort((left, right) => left.routeIndex - right.routeIndex);
-  const trunk = [...routeNodes, rootNode];
-
-  const trunkIds = new Set(trunk.map((node) => node.id));
-  const parentMap = new Map();
+  const ancestorsByDescendant = new Map();
   for (const link of graph.links) {
-    parentMap.set(link.target, { source: link.source, kind: link.kind });
+    if (!ancestorsByDescendant.has(link.target)) ancestorsByDescendant.set(link.target, []);
+    const ancestor = byId.get(link.source);
+    if (ancestor) ancestorsByDescendant.get(link.target).push(ancestor);
+  }
+
+  for (const entries of ancestorsByDescendant.values()) {
+    entries.sort((left, right) => {
+      const coreDelta = Number(Number.isInteger(right.routeIndex) && right.routeIndex >= 0) - Number(Number.isInteger(left.routeIndex) && left.routeIndex >= 0);
+      if (coreDelta !== 0) return coreDelta;
+      const depthDelta = (left.depth || 0) - (right.depth || 0);
+      if (depthDelta !== 0) return depthDelta;
+      return (right.influenceScore || 0) - (left.influenceScore || 0);
+    });
   }
 
   const cards = [];
   const positions = new Map();
   const safeWidth = Math.max(width, 320);
-  const topPadding = 34;
-  const bottomPadding = 42;
-  const centerX = safeWidth / 2;
-  const trunkGap = clamp((height - topPadding - bottomPadding) / Math.max(trunk.length - 1, 1), 92, 124);
+  const maxDepth = Math.max(...graph.nodes.map((node) => Number(node.depth) || 0), 0);
+  const leftGutter = TREE_LEFT_GUTTER;
+  const rightGutter = TREE_RIGHT_GUTTER;
+  const topPadding = 74;
+  const bottomPadding = 76;
+  const usableWidth = Math.max(220, safeWidth - leftGutter - rightGutter);
+  const centerX = leftGutter + usableWidth / 2;
+  const levelGap =
+    maxDepth > 0
+      ? clamp((height - topPadding - bottomPadding) / maxDepth, 116, 220)
+      : 0;
+  const siblingGap = clamp(safeWidth * 0.11, 42, 96);
+  const leafSpan = clamp(safeWidth * 0.2, 132, 240);
+  const layerLabels = Array.from({ length: maxDepth + 1 }, (_, depth) => ({
+    depth,
+    label: labelForDepth(depth),
+    y: height - bottomPadding - depth * levelGap
+  }));
 
   const addCard = (node, x, y, variant, popoverSide) => {
     const popoverWidth =
@@ -207,40 +260,56 @@ function buildTreeLayout(graph, width, height) {
     return card;
   };
 
-  trunk.forEach((node, index) => {
-    const isSeed = node.id === rootNode.id;
-    const x = centerX;
-    const popSide = index % 2 === 0 ? "right" : "left";
-    addCard(node, x, topPadding + index * trunkGap, isSeed ? "seed" : "route", popSide);
-  });
+  const subtreeWidthMemo = new Map();
+  const measureSubtree = (nodeId) => {
+    if (subtreeWidthMemo.has(nodeId)) return subtreeWidthMemo.get(nodeId);
+    const ancestors = ancestorsByDescendant.get(nodeId) || [];
+    if (!ancestors.length) {
+      subtreeWidthMemo.set(nodeId, leafSpan);
+      return leafSpan;
+    }
 
-  const contextByParent = new Map();
-  for (const node of graph.nodes) {
-    if (trunkIds.has(node.id)) continue;
-    const parentId = parentMap.get(node.id)?.source || rootNode.id;
-    if (!contextByParent.has(parentId)) contextByParent.set(parentId, []);
-    contextByParent.get(parentId).push(node);
-  }
+    const total = ancestors.reduce((sum, ancestor, index) => {
+      const next = measureSubtree(ancestor.id);
+      return sum + next + (index > 0 ? siblingGap : 0);
+    }, 0);
 
-  for (const [parentId, items] of contextByParent.entries()) {
-    const parentCard = positions.get(parentId);
-    if (!parentCard) continue;
+    const widthNeeded = Math.max(leafSpan, total);
+    subtreeWidthMemo.set(nodeId, widthNeeded);
+    return widthNeeded;
+  };
 
-    items.forEach((node, index) => {
-      const side = index % 2 === 0 ? -1 : 1;
-      const branchRank = Math.floor(index / 2);
-      const xOffset = clamp(safeWidth * 0.24, 112, 210) + branchRank * clamp(safeWidth * 0.06, 24, 54);
-      const yOffset = 54 + branchRank * 48;
-      const branchBaseY = parentCard.y - yOffset;
-      const x = clamp(parentCard.x + side * xOffset, 120, safeWidth - 120);
-      const y = clamp(branchBaseY, topPadding + 10, height - 86);
-      let popSide;
-      if (x < safeWidth / 2 - 12) popSide = "right";
-      else if (x > safeWidth / 2 + 12) popSide = "left";
-      else popSide = side < 0 ? "right" : "left";
-      addCard(node, x, y, "context", popSide);
+  const placeTree = (nodeId, center, level = 0) => {
+    const node = byId.get(nodeId);
+    if (!node || positions.has(nodeId)) return;
+
+    const y = height - bottomPadding - level * levelGap;
+    const variant =
+      node.kind === "seed"
+        ? "seed"
+        : Number.isInteger(node.routeIndex) && node.routeIndex >= 0
+          ? "route"
+          : "context";
+    const popSide = center < safeWidth / 2 - 20 ? "right" : center > safeWidth / 2 + 20 ? "left" : "right";
+    addCard(node, center, y, variant, popSide);
+
+    const ancestors = ancestorsByDescendant.get(nodeId) || [];
+    if (!ancestors.length) return;
+
+    const totalWidth = ancestors.reduce((sum, ancestor, index) => {
+      return sum + measureSubtree(ancestor.id) + (index > 0 ? siblingGap : 0);
+    }, 0);
+
+    let cursor = center - totalWidth / 2;
+    ancestors.forEach((ancestor) => {
+      const branchWidth = measureSubtree(ancestor.id);
+      const nextCenter = clamp(cursor + branchWidth / 2, leftGutter, safeWidth - rightGutter);
+      placeTree(ancestor.id, nextCenter, level + 1);
+      cursor += branchWidth + siblingGap;
     });
-  }
+  };
+
+  placeTree(rootNode.id, centerX, 0);
 
   const edges = graph.links
     .map((link) => {
@@ -251,7 +320,7 @@ function buildTreeLayout(graph, width, height) {
     })
     .filter(Boolean);
 
-  return { cards, edges };
+  return { cards, edges, layerLabels, maxDepth };
 }
 
 function linkPath(edge) {
@@ -263,17 +332,28 @@ function linkPath(edge) {
   const startY = sourceBottomY;
   const endX = target.x;
   const endY = targetTopY;
-  const deltaX = endX - startX;
-  const midY = startY + (endY - startY) * 0.58;
-  const bendX = startX + deltaX * 0.28;
+  const midY = startY + (endY - startY) * 0.54;
 
-  return `M ${startX} ${startY} C ${startX} ${midY}, ${bendX} ${midY}, ${endX} ${endY}`;
+  return `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`;
 }
 
 export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
   const containerRef = useRef(null);
   const [width, setWidth] = useState(260);
-  const [height] = useState(560);
+
+  const graph = useMemo(() => normalizeGraphData(data), [data]);
+  const height = useMemo(() => {
+    const count = graph.nodes.length;
+    if (count <= 4) return 640;
+    if (count <= 7) return 700;
+    return 760;
+  }, [graph.nodes.length]);
+  const hasGraph = graph.nodes.length > 0;
+  const focalNode = hasGraph
+    ? graph.nodes.find((node) => node.id === selectedNodeId)
+      || graph.nodes.find((node) => node.kind === "seed")
+      || graph.nodes[0]
+    : null;
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
@@ -289,25 +369,33 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
     return () => observer.disconnect();
   }, []);
 
-  const graph = useMemo(() => normalizeGraphData(data), [data]);
-  const hasGraph = graph.nodes.length > 0;
-  const focalNode = hasGraph
-    ? graph.nodes.find((node) => node.id === selectedNodeId)
-      || graph.nodes.find((node) => node.kind === "seed")
-      || graph.nodes[0]
-    : null;
-
   useEffect(() => {
     onNodeSelect?.(focalNode || null);
   }, [focalNode, onNodeSelect]);
 
   const layout = useMemo(() => buildTreeLayout(graph, width, height), [graph, width, height]);
+  const nodeCount = graph.nodes.length;
 
   return (
     <div className="ancestor-tree-stack">
       <div ref={containerRef} className="ancestor-canvas-shell">
         {hasGraph ? (
           <div className="ancestor-tree-surface" style={{ minHeight: height }}>
+            <div className="ancestor-tree-summary">
+              <span>{nodeCount} papers mapped</span>
+              <span>{layout.maxDepth + 1} learning layers</span>
+            </div>
+            <div className="ancestor-tree-layers" aria-hidden="true">
+              {layout.layerLabels.map((layer) => (
+                <div
+                  key={layer.depth}
+                  className="ancestor-tree-layer"
+                  style={{ top: `${layer.y}px`, "--ancestor-label-gutter": `${TREE_LEFT_GUTTER - 28}px` }}
+                >
+                  <span className="ancestor-tree-layer-label">{layer.label}</span>
+                </div>
+              ))}
+            </div>
             <div className="ancestor-tree-card-layer">
               {layout.cards.map((card) => {
                 const isSelected = card.id === selectedNodeId;
@@ -319,7 +407,7 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
                     : card.variant === "context"
                       ? `Supporting context: ${card.title || "Untitled paper"}`
                       : card.title
-                        ? `Main route, step ${marker}: ${card.title}`
+                        ? `Core ancestor: ${card.title}`
                         : "Paper node";
                 const popoverClass = [
                   "tree-node-popover",
@@ -392,7 +480,7 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
         <p className="insight-title">Knowledge Insight</p>
         <p>
           {hasGraph
-            ? "The ★ marker is your starting paper (the one you searched). Numbers are the main reading route; ◦ marks optional supporting context. Hover a marker to read the full title beside the path."
+            ? "The ★ marker is your current paper. Filled markers show core ancestors near the center of the lineage; hollow markers show supporting branches. Hover a marker to read the paper title."
             : "Lineage details will appear here once a tree is built from a paper."}
         </p>
       </div>

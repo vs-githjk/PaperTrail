@@ -15,7 +15,12 @@ class PaperController {
     try {
       const query = String(req.query.q || "");
       const limit = Number(req.query.limit) || 20;
-      const papers = await paperService.searchPapers(query, limit, req.user?.id || null);
+      const clarification = {
+        focus: req.query.focus,
+        material: req.query.material,
+        goal: req.query.goal
+      };
+      const papers = await paperService.searchPapers(query, limit, req.user?.id || null, clarification);
       res.json(papers);
     } catch (error) {
       next(error);

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import AncestorTree from "./components/AncestorTree";
 import Particles from "./components/Particles";
 import { FloatingField } from "./ux/FloatingField";
@@ -154,6 +154,152 @@ function formatSessionTime(value) {
   }).format(date);
 }
 
+function tokenizePrompt(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function isBroadTopicPrompt(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return false;
+  if (/10\.\d{4,9}\//i.test(raw) || /arxiv\.org|semanticscholar\.org|doi\.org/i.test(raw)) return false;
+
+  const tokens = tokenizePrompt(raw);
+  const broadSingles = new Set(["llm", "llms", "ai", "iot", "nlp", "rag"]);
+  if (tokens.length === 1 && broadSingles.has(tokens[0])) return true;
+  if (tokens.length <= 3 && !/["“”]/.test(raw)) return true;
+  if (/\b(basics|overview|introduction|fundamentals|applications|systems)\b/i.test(raw)) return true;
+  return false;
+}
+
+const CLARIFICATION_GROUPS = {
+  focus: {
+    label: "What part matters most?",
+    options: [
+      { id: "foundations", label: "Foundations", hint: "theory, origins, seminal work" },
+      { id: "reasoning", label: "Reasoning", hint: "chain-of-thought, problem solving" },
+      { id: "agents", label: "Agents", hint: "tool use, planning, autonomy" },
+      { id: "rag", label: "RAG", hint: "retrieval, memory, grounded answers" },
+      { id: "applications", label: "Applications", hint: "real-world systems and uses" }
+    ]
+  },
+  material: {
+    label: "What kind of papers do you want?",
+    options: [
+      { id: "survey", label: "Intro & Surveys", hint: "high-level orientation first" },
+      { id: "seminal", label: "Seminal Papers", hint: "older foundational work" },
+      { id: "practical", label: "Practical Papers", hint: "methods, systems, implementation" },
+      { id: "recent", label: "Recent Work", hint: "more current papers" }
+    ]
+  },
+  goal: {
+    label: "What is your goal?",
+    options: [
+      { id: "understand", label: "Understand from scratch", hint: "build intuition gradually" },
+      { id: "build", label: "Build something", hint: "favor actionable methods" },
+      { id: "research", label: "Research deeply", hint: "broader and more foundational" }
+    ]
+  }
+};
+
+function clarificationBoost(paper, clarification) {
+  if (!paper || !clarification) return 0;
+  const haystack = `${paper.title || ""} ${paper.abstract || ""} ${paper.matchReason || ""} ${paper.role || ""} ${paper.roleReason || ""}`.toLowerCase();
+  let boost = 0;
+
+  const focusTokens = {
+    foundations: ["foundation", "fundamental", "survey", "overview", "introduction", "theory", "vision"],
+    reasoning: ["reasoning", "planning", "inference", "decision", "problem solving"],
+    agents: ["agent", "tool", "autonomous", "planner", "workflow"],
+    rag: ["retrieval", "rag", "memory", "knowledge", "grounded"],
+    applications: ["application", "system", "deployment", "case study", "practical"]
+  };
+
+  const materialRules = {
+    survey: () => (paper.role === "overview" ? 70 : haystack.includes("survey") || haystack.includes("overview") ? 45 : -10),
+    seminal: () => (paper.role === "seminal" ? 70 : paper.year && Number(paper.year) < 2018 ? 28 : -8),
+    practical: () => (haystack.includes("system") || haystack.includes("application") || haystack.includes("framework") ? 45 : 0),
+    recent: () => (paper.year && Number(paper.year) >= 2023 ? 36 : 0)
+  };
+
+  const goalRules = {
+    understand: () => (paper.role === "overview" ? 55 : paper.role === "starting_point" ? 24 : 0),
+    build: () => (haystack.includes("framework") || haystack.includes("system") || haystack.includes("application") ? 40 : 0),
+    research: () => (paper.role === "seminal" ? 38 : paper.role === "overview" ? 24 : 10)
+  };
+
+  if (clarification.focus && focusTokens[clarification.focus]) {
+    for (const token of focusTokens[clarification.focus]) {
+      if (haystack.includes(token)) boost += 16;
+    }
+  }
+
+  if (clarification.material && materialRules[clarification.material]) {
+    boost += materialRules[clarification.material]();
+  }
+
+  if (clarification.goal && goalRules[clarification.goal]) {
+    boost += goalRules[clarification.goal]();
+  }
+
+  return boost;
+}
+
+function updateClarificationValue(prev, key, value) {
+  return {
+    ...prev,
+    [key]: prev[key] === value ? "" : value
+  };
+}
+
+class WorkbenchErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error) {
+    console.error("PaperTrail runtime error", error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <main className="app workbench-shell">
+          <div className="cosmos-backdrop" aria-hidden="true" />
+          <section className="runtime-error-panel">
+            <span className="canvas-badge">PaperTrail hit a runtime error</span>
+            <h2>The refined tree flow crashed in the browser.</h2>
+            <p>
+              The page didn’t lose your work, but this code path needs to be fixed. Refresh once, and if it happens
+              again, the error below tells us exactly what broke.
+            </p>
+            <pre>{String(this.state.error?.message || this.state.error)}</pre>
+            <button
+              type="button"
+              className="pt-btn-primary"
+              data-cta-long="true"
+              onClick={() => window.location.reload()}
+            >
+              reload local preview
+            </button>
+          </section>
+        </main>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [authMode, setAuthMode] = useState("login");
   const [showAuthPanel, setShowAuthPanel] = useState(false);
@@ -184,6 +330,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [routeTransitioning, setRouteTransitioning] = useState(false);
+  const [clarification, setClarification] = useState({ focus: "", material: "", goal: "" });
   const treeRestoreRef = useRef(null);
   const handlePaperClickRef = useRef(null);
   const shellRef = useRef(null);
@@ -192,12 +339,30 @@ export default function App() {
   const authLoginTabRef = useRef(null);
   const authRegisterTabRef = useRef(null);
 
+  const broadQueryMode = useMemo(() => isBroadTopicPrompt(query), [query]);
+  const hasClarificationAnswers = Boolean(clarification.focus || clarification.material || clarification.goal);
+  const rankedResults = useMemo(() => {
+    if (!results.length || !hasClarificationAnswers) return results;
+
+    return [...results].sort((left, right) => {
+      const rightScore = Number(right.recommendationScore || 0) + clarificationBoost(right, clarification);
+      const leftScore = Number(left.recommendationScore || 0) + clarificationBoost(left, clarification);
+      const scoreGap = rightScore - leftScore;
+      if (scoreGap !== 0) return scoreGap;
+      return String(left.title || "").localeCompare(String(right.title || ""));
+    });
+  }, [results, clarification, hasClarificationAnswers]);
+
   const selectedPaper = useMemo(
-    () => results.find((paper) => getPaperId(paper) === selectedPaperId) || null,
-    [results, selectedPaperId]
+    () => rankedResults.find((paper) => getPaperId(paper) === selectedPaperId)
+      || results.find((paper) => getPaperId(paper) === selectedPaperId)
+      || null,
+    [rankedResults, results, selectedPaperId]
   );
 
   const guide = graphData?.data?.meta?.guide ?? graphData?.meta?.guide ?? null;
+  const graphMeta = graphData?.data?.meta ?? graphData?.meta ?? null;
+  const isFallbackTree = graphMeta?.source === "fallback";
   const routeSteps = Array.isArray(guide?.recommendedOrder) ? guide.recommendedOrder : [];
   const companionResources = Array.isArray(guide?.companionResources) ? guide.companionResources : [];
   const companionResourceGroups = useMemo(
@@ -432,6 +597,11 @@ export default function App() {
       setSearchPlan(Array.isArray(snap.searchPlan) ? snap.searchPlan : []);
       setSelectedPaperId(snap.selectedPaperId ?? null);
       setGraphData(snap.graphData ?? null);
+      setClarification(
+        snap.clarification && typeof snap.clarification === "object"
+          ? { focus: snap.clarification.focus || "", material: snap.clarification.material || "", goal: snap.clarification.goal || "" }
+          : { focus: "", material: "", goal: "" }
+      );
       setFocusedNode(null);
       setTrailSaved(false);
       if (snap.selectedPaperId && !snap.graphData) {
@@ -452,10 +622,11 @@ export default function App() {
       results,
       searchPlan,
       selectedPaperId,
-      graphData
+      graphData,
+      clarification
     };
     writeWorkbenchSession(payload);
-  }, [sessionHydrated, query, hasSearched, results, searchPlan, selectedPaperId, graphData]);
+  }, [sessionHydrated, query, hasSearched, results, searchPlan, selectedPaperId, graphData, clarification]);
 
   async function refreshWorkspace() {
     if (!authToken) {
@@ -478,9 +649,17 @@ export default function App() {
     }
   }
 
-  async function runSearch(searchText) {
+  async function runSearch(searchText, options = {}) {
     const normalized = String(searchText || "").trim();
     if (!normalized) return [];
+    const normalizedClarification = options?.clarification && typeof options.clarification === "object"
+      ? {
+          focus: options.clarification.focus || "",
+          material: options.clarification.material || "",
+          goal: options.clarification.goal || ""
+        }
+      : { focus: "", material: "", goal: "" };
+    const preserveClarification = Boolean(options?.preserveClarification);
 
     setError("");
     setHasSearched(true);
@@ -489,10 +668,19 @@ export default function App() {
     setGraphData(null);
     setFocusedNode(null);
     setSelectedPaperId(null);
+    if (preserveClarification) {
+      setClarification(normalizedClarification);
+    } else {
+      setClarification({ focus: "", material: "", goal: "" });
+    }
 
     try {
+      const params = new URLSearchParams({ q: normalized });
+      if (normalizedClarification.focus) params.set("focus", normalizedClarification.focus);
+      if (normalizedClarification.material) params.set("material", normalizedClarification.material);
+      if (normalizedClarification.goal) params.set("goal", normalizedClarification.goal);
       const response = await fetch(
-        `${API_BASE}/api/search?q=${encodeURIComponent(normalized)}`,
+        `${API_BASE}/api/search?${params.toString()}`,
         {
           headers: getAuthHeaders()
         }
@@ -518,7 +706,7 @@ export default function App() {
   async function handleSearch(event) {
     event.preventDefault();
     const searchedResults = await runSearch(query);
-    if (searchedResults[0]) {
+    if (searchedResults[0] && !isBroadTopicPrompt(query)) {
       await handlePaperClick(searchedResults[0]);
     }
   }
@@ -540,7 +728,8 @@ export default function App() {
         }),
         body: JSON.stringify({
           ...paper,
-          query: query.trim()
+          query: query.trim(),
+          clarification: hasClarificationAnswers ? clarification : undefined
         })
       });
       if (!response.ok) throw new Error(`Ancestor fetch failed: ${response.status}`);
@@ -582,6 +771,7 @@ export default function App() {
     setSelectedPaperId(null);
     setGraphData(null);
     setFocusedNode(null);
+    setClarification({ focus: "", material: "", goal: "" });
     setTrailSaved(false);
     setLoadingSearch(false);
     setLoadingTree(false);
@@ -589,7 +779,7 @@ export default function App() {
   }
 
   async function handleTopMatchTree() {
-    let topMatch = results[0] || null;
+    let topMatch = rankedResults[0] || results[0] || null;
 
     if (!topMatch) {
       const searchedResults = await runSearch(query);
@@ -598,6 +788,20 @@ export default function App() {
 
     if (!topMatch) {
       setError("Search first to load starting points before building the ancestor tree.");
+      return;
+    }
+
+    await handlePaperClick(topMatch);
+  }
+
+  async function handleClarifiedBuild() {
+    const refinedResults = await runSearch(query, {
+      clarification,
+      preserveClarification: true
+    });
+    const topMatch = refinedResults[0] || null;
+    if (!topMatch) {
+      setError("PaperTrail couldn’t find a refined starting paper for this topic yet. Try a slightly more specific prompt or use broad match.");
       return;
     }
 
@@ -744,10 +948,12 @@ export default function App() {
     setSelectedPaperId(null);
     setGraphData(null);
     setFocusedNode(null);
+    setClarification({ focus: "", material: "", goal: "" });
     setTrailSaved(false);
   }
 
   return (
+    <WorkbenchErrorBoundary>
     <main ref={shellRef} className="app workbench-shell">
       <div className="cosmos-backdrop" aria-hidden="true">
         <div className="cosmos-orb cosmos-orb-left" />
@@ -1105,6 +1311,72 @@ export default function App() {
                   </p>
                 </header>
 
+                {broadQueryMode && results.length > 0 && !graphData ? (
+                  <div className="guide-card clarification-card agentic-card ux-card-tilt ux-card-tilt--glow-only">
+                    <div className="ux-card-grid" aria-hidden="true" />
+                    <h3>Narrow This Topic First</h3>
+                    <p>
+                      This topic is broad, so answer a few quick questions and PaperTrail will choose a much better seed
+                      before drawing the tree.
+                    </p>
+                    <div className="clarification-summary" aria-live="polite">
+                      {Object.entries(CLARIFICATION_GROUPS).map(([groupKey, group]) => {
+                        const selected = group.options.find((option) => option.id === clarification[groupKey]);
+                        return (
+                          <span key={groupKey} className={selected ? "clarification-summary-chip is-selected" : "clarification-summary-chip"}>
+                            <strong>{group.label}</strong>
+                            <em>{selected ? selected.label : "Not chosen yet"}</em>
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <div className="clarification-grid">
+                      {Object.entries(CLARIFICATION_GROUPS).map(([groupKey, group]) => (
+                        <div key={groupKey} className="clarification-group">
+                          <span className="meta-label">{group.label}</span>
+                          <div className="clarification-chip-row">
+                            {group.options.map((option) => {
+                              const isActive = clarification[groupKey] === option.id;
+                              return (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  className={isActive ? "clarification-chip clarification-chip-active" : "clarification-chip"}
+                                  aria-pressed={isActive}
+                                  onClick={() =>
+                                    setClarification((prev) => updateClarificationValue(prev, groupKey, option.id))
+                                  }
+                                >
+                                  <strong>{option.label}</strong>
+                                  <span>{option.hint}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="clarification-actions">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={handleTopMatchTree}
+                      >
+                        use broad match
+                      </button>
+                      <button
+                        type="button"
+                        className="pt-btn-primary"
+                        data-cta-long="true"
+                        onClick={handleClarifiedBuild}
+                        disabled={!hasClarificationAnswers || rankedResults.length === 0 || loadingTree}
+                      >
+                        {loadingTree ? "building…" : "build refined tree"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="guide-card agentic-card quickstart-card ux-card-tilt ux-card-tilt--glow-only">
                   <div className="ux-card-grid" aria-hidden="true" />
                   <h3>How To Use This Map</h3>
@@ -1163,29 +1435,20 @@ export default function App() {
                     </div>
                   </div>
                   {Array.isArray(results) && results.length > 0 ? (
-                    <div className="seed-switcher">
-                      {results.slice(0, 6).map((paper, index) => {
-                        const isActive = getPaperId(paper) === selectedPaperId;
-                        return (
-                          <button
-                            key={getPaperId(paper) || getPaperTitle(paper)}
-                            type="button"
-                            className={isActive ? "seed-chip seed-chip-active" : "seed-chip"}
-                            onClick={() => handlePaperClick(paper)}
-                          >
-                            <span>{index + 1}</span>
-                            <span>{getPaperTitle(paper)}</span>
-                          </button>
-                        );
-                      })}
+                    <div className="seed-switcher-hint">
+                      <span className="canvas-badge seed-switcher-badge">Starting points live on the right</span>
+                      <p>
+                        Keep the map focused here, then use the right rail to swap to another strong seed if you want
+                        to redraw the lineage.
+                      </p>
                     </div>
                   ) : null}
                   <div className="tree-explorer-layout">
                     <div className={routeTransitioning ? "tree-stage route-transitioning" : "tree-stage"}>
                       <div className="tree-stage-legend">
-                        <span className="legend-pill legend-pill-route">Main route</span>
-                        <span className="legend-pill legend-pill-context">Supporting context</span>
-                        <span className="legend-copy">Follow the bright numbered path first.</span>
+                        <span className="legend-pill legend-pill-route">Core ancestry</span>
+                        <span className="legend-pill legend-pill-context">Supporting branches</span>
+                        <span className="legend-copy">Hover a marker to inspect how each paper connects into the lineage.</span>
                       </div>
                       {loadingTree ? (
                         <div className="tree-loading-ux" aria-busy="true">
@@ -1305,6 +1568,17 @@ export default function App() {
                     <div className="ux-card-grid" aria-hidden="true" />
                     <h3>{guide.title}</h3>
                     <p>{guide.summary}</p>
+                  </div>
+                ) : null}
+
+                {isFallbackTree ? (
+                  <div className="guide-card fallback-note-card agentic-card ux-card-tilt ux-card-tilt--glow-only">
+                    <div className="ux-card-grid" aria-hidden="true" />
+                    <h3>Guided Fallback Tree</h3>
+                    <p>
+                      Live citation ancestry was unavailable for this seed, so PaperTrail built a broader learning tree
+                      from related papers, surveys, and foundational context instead.
+                    </p>
                   </div>
                 ) : null}
 
@@ -1430,7 +1704,7 @@ export default function App() {
               </div>
             ) : null}
             <ul className={`results compact-results${loadingSearch ? " is-hidden-while-loading" : ""}`}>
-              {results.map((paper, index) => {
+              {rankedResults.map((paper, index) => {
                 const id = getPaperId(paper);
                 const paperKey = String(id || paper.externalId || getPaperTitle(paper));
                 const isSaved = savedPaperKeys.has(paperKey);
@@ -1482,5 +1756,6 @@ export default function App() {
         </aside>
       </div>
     </main>
+    </WorkbenchErrorBoundary>
   );
 }

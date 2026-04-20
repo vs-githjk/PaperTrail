@@ -12,6 +12,14 @@ test("classifyQuery treats multi-word research prompts as broad topics", () => {
   assert.ok(profile.tokens.includes("natural"));
 });
 
+test("classifyQuery treats llms as a broad topic", () => {
+  const profile = __private.classifyQuery("llms");
+
+  assert.equal(profile.broadTopic, true);
+  assert.equal(profile.directIdentifier, false);
+  assert.deepEqual(profile.tokens, ["llms"]);
+});
+
 test("broad-topic queries expand into multiple candidate retrieval queries", () => {
   const profile = __private.classifyQuery("graph neural networks for drug discovery");
   const candidateQueries = __private.buildCandidateQueries(profile);
@@ -20,6 +28,21 @@ test("broad-topic queries expand into multiple candidate retrieval queries", () 
   assert.ok(candidateQueries.includes("graph neural networks for drug discovery survey"));
   assert.ok(candidateQueries.includes("graph neural networks for drug discovery review"));
   assert.ok(candidateQueries.length >= 4);
+});
+
+test("clarification expands candidate retrieval queries for broad topics", () => {
+  const profile = __private.classifyQuery("llms");
+  const candidateQueries = __private.buildCandidateQueries(profile, {
+    focus: "agents",
+    material: "survey",
+    goal: "understand"
+  });
+
+  assert.ok(candidateQueries.includes("llms"));
+  assert.ok(candidateQueries.includes("large language models"));
+  assert.ok(candidateQueries.some((query) => query.includes("agents")));
+  assert.ok(candidateQueries.some((query) => query.includes("survey")));
+  assert.ok(candidateQueries.some((query) => query.includes("from scratch") || query.includes("introduction")));
 });
 
 test("specific paper lookups do not over-expand candidate retrieval queries", () => {
@@ -55,6 +78,74 @@ test("seed scoring prefers survey-style papers for broad topics", () => {
   assert.ok(__private.scoreSeedPaper(surveyPaper, profile) > __private.scoreSeedPaper(narrowPaper, profile));
   assert.equal(__private.inferMatchReason(surveyPaper, profile), "Strong overview paper for a broad topic");
   assert.equal(__private.classifyPaperRole(surveyPaper, profile).role, "overview");
+});
+
+test("seed scoring prefers citation-backed structured papers when topical match is similar", () => {
+  const profile = __private.classifyQuery("internet of things");
+  const structuredPaper = {
+    title: "Internet of Things (IoT): A vision, architectural elements, and future directions",
+    abstract: "A broad treatment of the internet of things, architecture, and future directions.",
+    influenceScore: 68,
+    citationCount: 420,
+    year: 2013,
+    source: "semantic_scholar",
+    paperId: "structured-paper",
+    doi: "10.1000/structured",
+    authors: ["Structured Author"]
+  };
+  const weaklyGroundedPaper = {
+    title: "Internet of Things for Smart Environments",
+    abstract: "A related internet of things topic paper.",
+    influenceScore: 70,
+    citationCount: 0,
+    year: 2024,
+    source: "arxiv",
+    authors: ["Weak Author"]
+  };
+
+  assert.ok(__private.scoreSeedPaper(structuredPaper, profile) > __private.scoreSeedPaper(weaklyGroundedPaper, profile));
+});
+
+test("clarification scoring prefers papers that match the chosen direction", () => {
+  const focusedPaper = {
+    title: "A Survey of LLM Agents and Planning",
+    abstract: "An introduction to agent planning with large language models.",
+    role: "overview",
+    year: 2024
+  };
+  const mismatchedPaper = {
+    title: "Quantization of LLMs for Edge Devices",
+    abstract: "Practical methods for quantized deployment.",
+    role: "starting_point",
+    year: 2024
+  };
+
+  const clarification = { focus: "agents", material: "survey", goal: "understand" };
+
+  assert.ok(
+    __private.scoreClarificationFit(focusedPaper, clarification) >
+      __private.scoreClarificationFit(mismatchedPaper, clarification)
+  );
+});
+
+test("adaptive tree budget allows deeper trees for strong seeds", () => {
+  const budget = __private.chooseTreeBudget(
+    {
+      paperId: "seed-paper",
+      doi: "10.1000/seed",
+      citationCount: 240,
+      references: Array.from({ length: 8 }, (_, index) => ({ paperId: `ref-${index}` })),
+      title: "Large Language Models for Planning"
+    },
+    {},
+    {
+      query: "llms",
+      clarification: { focus: "agents", material: "survey", goal: "understand" }
+    }
+  );
+
+  assert.equal(budget.depthLimit, 4);
+  assert.ok(budget.totalNodeLimit >= 20);
 });
 
 test("seed scoring prefers exact title matches for specific paper lookups", () => {
@@ -260,6 +351,9 @@ test("fallback ancestor guide includes staged reading-plan metadata", async () =
       query: "Attention Is All You Need"
     });
 
+    assert.equal(result.data.meta.source, "fallback");
+    assert.ok(result.data.nodes.length >= 6);
+    assert.ok(result.data.nodes.some((node) => node.depth >= 2));
     const guide = result.data.meta.guide;
     assert.ok(Array.isArray(guide.recommendedOrder));
     assert.ok(Array.isArray(guide.readingPlan));
@@ -368,4 +462,118 @@ test("guide includes companion learning resources beyond papers", () => {
   assert.ok(guide.companionResources.length >= 4);
   assert.ok(guide.companionResources.some((resource) => resource.type === "video"));
   assert.ok(guide.companionResources.some((resource) => resource.label === "Google Scholar"));
+});
+
+test("reference breadth narrows as PaperTrail goes deeper into the lineage", () => {
+  assert.equal(__private.referenceBreadthForDepth(0, 4), 4);
+  assert.equal(__private.referenceBreadthForDepth(1, 4), 3);
+  assert.equal(__private.referenceBreadthForDepth(2, 4), 2);
+  assert.equal(__private.referenceBreadthForDepth(3, 4), 2);
+});
+
+test("reference candidate selection prefers stronger overview and foundational ancestors", () => {
+  const rootNode = {
+    id: "root",
+    title: "Internet of Things Security for Adaptive Systems",
+    year: 2024,
+    query: "iot security adaptive systems"
+  };
+  const queryProfile = __private.classifyQuery(rootNode.query);
+
+  const references = __private.selectReferenceCandidates(
+    [
+      {
+        paperId: "overview",
+        title: "A Survey of IoT Security for Adaptive Systems",
+        abstract: "A review of IoT security, adaptive learning, and system design.",
+        year: 2022,
+        authors: [{ name: "Overview Author" }],
+        citationCount: 180,
+        source: "semantic_scholar"
+      },
+      {
+        paperId: "seminal",
+        title: "Foundations of Secure Distributed Device Coordination",
+        abstract: "Foundational device coordination for secure distributed systems.",
+        year: 2012,
+        authors: [{ name: "Seminal Author" }],
+        citationCount: 240,
+        source: "semantic_scholar"
+      },
+      {
+        paperId: "weak",
+        title: "An Edge Cache Policy for Mobile Devices",
+        abstract: "A weakly related edge caching paper.",
+        year: 2023,
+        authors: [{ name: "Weak Author" }],
+        citationCount: 15,
+        source: "semantic_scholar"
+      }
+    ],
+    rootNode,
+    queryProfile,
+    1,
+    2
+  );
+
+  assert.equal(references.length, 2);
+  assert.equal(references[0].paperId, "overview");
+  assert.equal(references[1].paperId, "seminal");
+});
+
+test("supplemental ancestor candidates enrich sparse trees with broader context", () => {
+  const rootNode = {
+    id: "root",
+    title: "Quantum Computing in the NISQ Era and Beyond",
+    year: 2018,
+    query: "quantum computing"
+  };
+  const queryProfile = __private.classifyQuery(rootNode.query);
+  const candidates = __private.buildSupplementalAncestorCandidates(
+    [
+      {
+        paperId: "overview",
+        title: "Quantum Computing: An Overview",
+        abstract: "A broad review of quantum computing.",
+        year: 2021,
+        authors: ["Overview Author"],
+        influenceScore: 72,
+        source: "semantic_scholar"
+      },
+      {
+        paperId: "seminal",
+        title: "Foundations of Quantum Information Theory",
+        abstract: "Foundational principles behind quantum information and computing.",
+        year: 2001,
+        authors: ["Seminal Author"],
+        influenceScore: 95,
+        source: "semantic_scholar"
+      },
+      {
+        paperId: "starter",
+        title: "Practical Quantum Algorithms for Near-Term Devices",
+        abstract: "A practical starting paper for near-term quantum devices.",
+        year: 2020,
+        authors: ["Starter Author"],
+        influenceScore: 44,
+        source: "semantic_scholar"
+      }
+    ],
+    [
+      {
+        id: "root",
+        title: "Quantum Computing in the NISQ Era and Beyond",
+        depth: 0,
+        influenceScore: 0
+      }
+    ],
+    rootNode,
+    queryProfile,
+    3
+  );
+
+  assert.equal(candidates.length, 3);
+  assert.equal(candidates[0].role, "overview");
+  assert.ok(candidates.some((candidate) => candidate.role === "seminal"));
+  assert.ok(candidates.every((candidate) => candidate.attachToId === "root" || candidate.depth >= 2));
 });

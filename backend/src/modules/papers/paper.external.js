@@ -65,6 +65,34 @@ const COMMON_QUERY_TERMS = new Set([
 
 const SURVEY_HINTS = ["survey", "review", "overview", "tutorial", "introduction", "primer", "systematic"];
 const CANONICAL_QUERY_SUFFIXES = ["survey", "review", "overview", "introduction"];
+const BROAD_SINGLETONS = new Set(["llm", "llms", "ai", "iot", "nlp", "rag", "agents", "transformers"]);
+const QUERY_ALIASES = {
+  llm: ["large language models"],
+  llms: ["large language models"],
+  rag: ["retrieval augmented generation", "retrieval-augmented generation"],
+  iot: ["internet of things"],
+  nlp: ["natural language processing"]
+};
+const CLARIFICATION_TERMS = {
+  focus: {
+    foundations: ["foundations", "fundamentals", "theory", "origins"],
+    reasoning: ["reasoning", "chain of thought", "inference"],
+    agents: ["agents", "agent planning", "autonomous agents"],
+    rag: ["rag", "retrieval augmented generation", "retrieval"],
+    applications: ["applications", "systems", "use cases"]
+  },
+  material: {
+    survey: ["survey", "review", "overview", "introduction"],
+    seminal: ["foundational", "seminal", "classic"],
+    practical: ["practical", "system", "implementation"],
+    recent: ["recent", "latest", "state of the art"]
+  },
+  goal: {
+    understand: ["introduction", "from scratch", "beginner"],
+    build: ["practical", "applied", "implementation"],
+    research: ["research", "advanced", "foundational"]
+  }
+};
 
 function pickIdentifier(paper) {
   if (!paper || typeof paper !== "object") return "";
@@ -153,6 +181,24 @@ function coverageRatio(text, queryProfile) {
 function hasSurveyHint(text) {
   const lowered = String(text || "").toLowerCase();
   return SURVEY_HINTS.some((hint) => lowered.includes(hint));
+}
+
+function normalizeClarification(input) {
+  if (!input || typeof input !== "object") {
+    return { focus: "", material: "", goal: "" };
+  }
+
+  const normalized = {
+    focus: typeof input.focus === "string" ? input.focus.trim().toLowerCase() : "",
+    material: typeof input.material === "string" ? input.material.trim().toLowerCase() : "",
+    goal: typeof input.goal === "string" ? input.goal.trim().toLowerCase() : ""
+  };
+
+  return {
+    focus: CLARIFICATION_TERMS.focus[normalized.focus] ? normalized.focus : "",
+    material: CLARIFICATION_TERMS.material[normalized.material] ? normalized.material : "",
+    goal: CLARIFICATION_TERMS.goal[normalized.goal] ? normalized.goal : ""
+  };
 }
 
 function importantTopicTokens(queryProfile) {
@@ -348,7 +394,7 @@ function classifyQuery(query) {
     !looksLikeIdentifier(normalized) &&
     !hasQuotedTitle &&
     !exactishTitle &&
-    (tokens.length >= 3 || /\b(topic|overview|introduction|basics|fundamentals)\b/.test(lowered));
+    (tokens.length >= 3 || BROAD_SINGLETONS.has(lowered) || /\b(topic|overview|introduction|basics|fundamentals)\b/.test(lowered));
 
   return {
     normalized,
@@ -364,11 +410,33 @@ function toTitleCase(token) {
   return token.charAt(0).toUpperCase() + token.slice(1);
 }
 
-function buildCandidateQueries(queryProfile) {
+function expandBaseAliases(base) {
+  const aliases = [base];
+  const aliasTerms = QUERY_ALIASES[base.toLowerCase()] || [];
+  return [...new Set([...aliases, ...aliasTerms])];
+}
+
+function buildClarificationPhrases(clarification) {
+  const phrases = [];
+
+  for (const groupKey of ["focus", "material", "goal"]) {
+    const value = clarification[groupKey];
+    if (value && CLARIFICATION_TERMS[groupKey][value]) {
+      phrases.push(...CLARIFICATION_TERMS[groupKey][value]);
+    }
+  }
+
+  return [...new Set(phrases.filter(Boolean))];
+}
+
+function buildCandidateQueries(queryProfile, clarificationInput = null) {
   const base = queryProfile.normalized.trim();
   if (!base) return [];
+  const clarification = normalizeClarification(clarificationInput);
+  const clarifiedPhrases = buildClarificationPhrases(clarification);
+  const baseVariants = expandBaseAliases(base);
 
-  const queries = [base];
+  const queries = [...baseVariants];
 
   if (queryProfile.exactishTitle) {
     queries.push(`"${base}"`);
@@ -376,13 +444,31 @@ function buildCandidateQueries(queryProfile) {
   }
 
   if (queryProfile.broadTopic) {
-    for (const suffix of CANONICAL_QUERY_SUFFIXES) {
-      queries.push(`${base} ${suffix}`);
+    for (const variant of baseVariants) {
+      for (const suffix of CANONICAL_QUERY_SUFFIXES) {
+        queries.push(`${variant} ${suffix}`);
+      }
     }
 
     const compactTopic = queryProfile.tokens.slice(0, 5).join(" ");
     if (compactTopic && compactTopic !== base.toLowerCase()) {
       queries.push(compactTopic);
+    }
+  }
+
+  if (clarifiedPhrases.length > 0) {
+    for (const variant of baseVariants) {
+      for (const phrase of clarifiedPhrases) {
+        queries.push(`${variant} ${phrase}`);
+      }
+
+      if (clarification.focus && clarification.material) {
+        queries.push(`${variant} ${clarification.focus} ${clarification.material}`);
+      }
+
+      if (clarification.focus && clarification.goal) {
+        queries.push(`${variant} ${clarification.focus} ${clarification.goal}`);
+      }
     }
   }
 
@@ -408,7 +494,29 @@ function inferMatchReason(paper, queryProfile) {
   return "Promising seed paper for this research direction";
 }
 
-function scoreSeedPaper(paper, queryProfile) {
+function scoreClarificationFit(paper, clarification) {
+  const normalized = normalizeClarification(clarification);
+  const haystack = `${paper.title || ""} ${paper.abstract || ""} ${paper.role || ""}`.toLowerCase();
+  let score = 0;
+
+  for (const groupKey of ["focus", "material", "goal"]) {
+    const value = normalized[groupKey];
+    if (!value) continue;
+    for (const token of CLARIFICATION_TERMS[groupKey][value]) {
+      if (haystack.includes(token)) score += groupKey === "focus" ? 14 : 10;
+    }
+  }
+
+  if (normalized.material === "survey" && hasSurveyHint(paper.title)) score += 40;
+  if (normalized.material === "seminal" && Number(paper.year || 0) > 0 && Number(paper.year || 0) <= 2019) score += 22;
+  if (normalized.material === "recent" && Number(paper.year || 0) >= 2023) score += 18;
+  if (normalized.goal === "understand" && hasSurveyHint(`${paper.title || ""} ${paper.abstract || ""}`)) score += 24;
+  if (normalized.goal === "build" && /system|framework|application|deployment|implementation/i.test(`${paper.title || ""} ${paper.abstract || ""}`)) score += 22;
+
+  return score;
+}
+
+function scoreSeedPaper(paper, queryProfile, clarification = null) {
   const title = String(paper.title || "");
   const abstract = String(paper.abstract || "");
   const titleLower = title.toLowerCase();
@@ -419,6 +527,11 @@ function scoreSeedPaper(paper, queryProfile) {
   const abstractCoverage = coverageRatio(abstract, queryProfile);
   const influence = Number(paper.influenceScore || 0);
   const year = Number(paper.year || 0);
+  const hasStructuredIdentifier = Boolean(paper.paperId || paper.doi);
+  const citationSignal = Math.min(
+    Number.isFinite(Number(paper.citationCount)) ? Number(paper.citationCount) : influence * 1000,
+    500
+  );
 
   let score = 0;
 
@@ -452,15 +565,21 @@ function scoreSeedPaper(paper, queryProfile) {
       score -= 20;
     }
     score += Math.min(influence, 120);
+    score += citationSignal * 0.05;
+    if (hasStructuredIdentifier) score += 18;
+    if (!hasStructuredIdentifier && paper.source !== "semantic_scholar") score -= 35;
     if (year >= 2018) score += 8;
   } else {
     score += Math.min(influence, 80);
+    score += citationSignal * 0.03;
+    if (hasStructuredIdentifier) score += 10;
     if (year >= 2015) score += 6;
   }
 
   if (paper.source === "semantic_scholar") score += 12;
   if (paper.doi) score += 10;
   if (Array.isArray(paper.authors) && paper.authors.length > 0) score += 4;
+  score += scoreClarificationFit(paper, clarification);
 
   return score;
 }
@@ -541,6 +660,43 @@ function buildAncestorReadingPlan(prioritized, rootNode, queryProfile) {
   ].filter(Boolean);
 }
 
+function referenceBreadthForDepth(depth, baseBreadth) {
+  const normalizedBase = Math.max(1, Number(baseBreadth) || 1);
+  if (depth <= 0) return normalizedBase;
+  if (depth === 1) return Math.max(2, normalizedBase - 1);
+  return Math.max(1, normalizedBase - 2);
+}
+
+function scoreReferenceCandidate(reference, rootNode, queryProfile, depth) {
+  const node = buildNode(reference, depth);
+  const roleMeta = classifyPaperRole(node, queryProfile, { depth, rootYear: rootNode.year });
+  let score = scoreAncestorNode(node, rootNode, queryProfile);
+
+  score += Math.min(Number(node.citationCount || 0), 400) * 0.08;
+  if (roleMeta.role === "overview") score += 40;
+  if (roleMeta.role === "seminal") score += 34;
+  if (depth === 1) score += 16;
+  if (node.doi) score += 6;
+  if (node.source === "semantic_scholar") score += 4;
+
+  return score;
+}
+
+function selectReferenceCandidates(references, rootNode, queryProfile, depth, limit) {
+  return dedupeByTitle(Array.isArray(references) ? references : [])
+    .map((reference) => ({
+      ...reference,
+      __score: scoreReferenceCandidate(reference, rootNode, queryProfile, depth)
+    }))
+    .sort((left, right) => {
+      const scoreGap = right.__score - left.__score;
+      if (scoreGap !== 0) return scoreGap;
+      return String(left.title || "").localeCompare(String(right.title || ""));
+    })
+    .slice(0, Math.max(1, limit))
+    .map(({ __score, ...reference }) => reference);
+}
+
 async function fetchSemanticScholar(topic, limit) {
   const normalizedTopic = extractIdentifierFromQuery(topic);
   const url =
@@ -572,9 +728,10 @@ async function fetchArxiv(topic, limit) {
   return parseArxivXml(xml).map(normalizeArxivItem);
 }
 
-async function fetchExternalPapers(topic, limit = 20) {
+async function fetchExternalPapers(topic, limit = 20, clarification = null) {
   const queryProfile = classifyQuery(topic);
-  const candidateQueries = buildCandidateQueries(queryProfile);
+  const normalizedClarification = normalizeClarification(clarification);
+  const candidateQueries = buildCandidateQueries(queryProfile, normalizedClarification);
   const perQueryLimit = queryProfile.broadTopic ? Math.min(Math.max(limit, 5), 8) : Math.min(limit, 20);
 
   const settledGroups = await Promise.all(
@@ -601,7 +758,7 @@ async function fetchExternalPapers(topic, limit = 20) {
   });
   return deduped
     .map((item) => {
-      const score = scoreSeedPaper(item, queryProfile);
+      const score = scoreSeedPaper(item, queryProfile, normalizedClarification);
       const roleMeta = classifyPaperRole(item, queryProfile, { depth: 0 });
       return {
         ...item,
@@ -642,6 +799,26 @@ async function fetchSemanticScholarPaper(identifier) {
   }
 
   return response.json();
+}
+
+async function hydratePaperForExpansion(paper, cache) {
+  const identifier = pickIdentifier(paper);
+  if (!identifier) return paper;
+
+  if (cache.has(identifier)) {
+    return cache.get(identifier);
+  }
+
+  try {
+    const hydrated = await fetchSemanticScholarPaper(identifier);
+    cache.set(identifier, hydrated);
+    if (hydrated?.paperId) cache.set(hydrated.paperId, hydrated);
+    if (hydrated?.externalIds?.DOI) cache.set(hydrated.externalIds.DOI, hydrated);
+    return hydrated;
+  } catch (error) {
+    cache.set(identifier, paper);
+    return paper;
+  }
 }
 
 async function resolvePaperSeed(paper) {
@@ -704,33 +881,286 @@ function dedupeByTitle(items) {
   });
 }
 
-function buildFallbackTree(paper) {
+function buildSupplementalAncestorCandidates(results, existingNodes, rootNode, queryProfile, maxCandidates = 6) {
+  const seenIds = new Set(existingNodes.map((node) => String(node.id || "").trim()).filter(Boolean));
+  const seenTitles = new Set(existingNodes.map((node) => String(node.title || "").toLowerCase().trim()).filter(Boolean));
+
+  const candidates = (Array.isArray(results) ? results : [])
+    .filter((item) => {
+      const id = String(item.id || item.paperId || item.externalId || "").trim();
+      const titleKey = String(item.title || "").toLowerCase().trim();
+      if (!titleKey) return false;
+      if (id && seenIds.has(id)) return false;
+      if (seenTitles.has(titleKey)) return false;
+      return true;
+    })
+    .map((item) => {
+      const roleMeta = classifyPaperRole(item, queryProfile, { depth: 1, rootYear: rootNode.year });
+      const depth =
+        roleMeta.role === "seminal"
+          ? 2
+          : roleMeta.role === "overview"
+            ? 1
+            : 1;
+
+      return {
+        id: item.paperId || item.id || item.doi || item.title,
+        title: item.title || "Untitled paper",
+        label: item.title || "Untitled paper",
+        year: item.year ?? null,
+        authors: Array.isArray(item.authors) ? item.authors : [],
+        abstract: item.abstract || roleMeta.roleReason,
+        citationCount: Number.isFinite(Number(item.citationCount)) ? Number(item.citationCount) : 0,
+        influenceScore: Number.isFinite(Number(item.influenceScore)) ? Number(item.influenceScore) : 0,
+        doi: item.doi || null,
+        paperId: item.paperId || item.externalId || item.id || null,
+        source: item.source || "semantic_scholar",
+        depth,
+        role: roleMeta.role,
+        roleLabel: roleMeta.roleLabel,
+        roleReason: roleMeta.roleReason
+      };
+    })
+    .sort((left, right) => {
+      const leftRoleBoost = left.role === "overview" ? 2 : left.role === "seminal" ? 1 : 0;
+      const rightRoleBoost = right.role === "overview" ? 2 : right.role === "seminal" ? 1 : 0;
+      const roleGap = rightRoleBoost - leftRoleBoost;
+      if (roleGap !== 0) return roleGap;
+      return (right.influenceScore || 0) - (left.influenceScore || 0);
+    })
+    .slice(0, Math.max(0, maxCandidates));
+
+  const bridgeNode =
+    existingNodes
+      .filter((node) => node.id !== rootNode.id)
+      .sort((left, right) => {
+        const leftRole = classifyPaperRole(left, queryProfile, { depth: left.depth, rootYear: rootNode.year }).role;
+        const rightRole = classifyPaperRole(right, queryProfile, { depth: right.depth, rootYear: rootNode.year }).role;
+        const leftBoost = leftRole === "overview" ? 2 : leftRole === "seminal" ? 1 : 0;
+        const rightBoost = rightRole === "overview" ? 2 : rightRole === "seminal" ? 1 : 0;
+        const boostGap = rightBoost - leftBoost;
+        if (boostGap !== 0) return boostGap;
+        return (right.influenceScore || 0) - (left.influenceScore || 0);
+      })[0] || rootNode;
+
+  return candidates.map((candidate, index) => {
+    const attachToId =
+      candidate.role === "seminal" && bridgeNode && bridgeNode.id !== rootNode.id
+        ? bridgeNode.id
+        : rootNode.id;
+
+    return {
+      ...candidate,
+      depth: attachToId === rootNode.id ? 1 : Math.max(2, candidate.depth || 2),
+      attachToId,
+      order: index
+    };
+  });
+}
+
+async function supplementSparseLineage({ rootNode, nodes, links, queryProfile, totalNodeLimit }) {
+  const remainingSlots = Math.max(0, totalNodeLimit - nodes.length);
+  if (remainingSlots === 0) return { nodes, links };
+
+  try {
+    const searchResults = await fetchExternalPapers(rootNode.query || rootNode.title || "", Math.min(12, remainingSlots + 6));
+    const supplementalNodes = buildSupplementalAncestorCandidates(
+      searchResults,
+      nodes,
+      rootNode,
+      queryProfile,
+      Math.min(remainingSlots, 6)
+    );
+
+    if (supplementalNodes.length === 0) return { nodes, links };
+
+    const nextNodes = [...nodes];
+    const nextLinks = [...links];
+    const seenLinks = new Set(links.map((link) => `${link.source}->${link.target}`));
+
+    for (const candidate of supplementalNodes) {
+      nextNodes.push(candidate);
+      const linkKey = `${candidate.attachToId}->${candidate.id}`;
+      if (!seenLinks.has(linkKey)) {
+        seenLinks.add(linkKey);
+        nextLinks.push({ source: candidate.attachToId, target: candidate.id });
+      }
+    }
+
+    return { nodes: nextNodes, links: nextLinks };
+  } catch (error) {
+    return { nodes, links };
+  }
+}
+
+function makeFallbackNode({ id, title, role, reason, depth, source = "fallback", authors = [], year = null, abstract = "", doi = null, paperId = null, influenceScore = 0, citationCount = 0 }) {
+  const roleMeta = {
+    role,
+    roleLabel:
+      role === "overview"
+        ? "Overview Paper"
+        : role === "seminal"
+          ? "Seminal Paper"
+          : role === "starting_point"
+            ? "Best Starting Paper"
+            : "Supporting Paper"
+  };
+
+  return {
+    id,
+    title,
+    label: title,
+    role: roleMeta.role,
+    roleLabel: roleMeta.roleLabel,
+    reason,
+    depth,
+    abstract: abstract || reason,
+    citationCount,
+    influenceScore,
+    doi,
+    paperId: paperId || id,
+    source,
+    authors,
+    year
+  };
+}
+
+function buildTemplateFallbackAncestors(rootId, rootTitle) {
+  return [
+    makeFallbackNode({
+      id: `${rootId}-overview`,
+      title: `Survey and orientation for ${rootTitle}`,
+      role: "overview",
+      reason: "Start here to get the landscape before diving into specialized papers.",
+      depth: 1
+    }),
+    makeFallbackNode({
+      id: `${rootId}-foundation`,
+      title: `Foundational work behind ${rootTitle}`,
+      role: "seminal",
+      reason: "Older background that likely shaped the field.",
+      depth: 1
+    }),
+    makeFallbackNode({
+      id: `${rootId}-methodology`,
+      title: `Core methodology related to ${rootTitle}`,
+      role: "starting_point",
+      reason: "A practical technical bridge into the methods used in this area.",
+      depth: 1
+    }),
+    makeFallbackNode({
+      id: `${rootId}-overview-detail`,
+      title: `Broader overview connected to ${rootTitle}`,
+      role: "overview",
+      reason: "Useful context once the first orientation pass is complete.",
+      depth: 2
+    }),
+    makeFallbackNode({
+      id: `${rootId}-theory`,
+      title: `Earlier theory that supports ${rootTitle}`,
+      role: "seminal",
+      reason: "A deeper conceptual ancestor for building intuition from scratch.",
+      depth: 2
+    }),
+    makeFallbackNode({
+      id: `${rootId}-application`,
+      title: `Applied paper that grounds ${rootTitle}`,
+      role: "supporting",
+      reason: "A concrete application that makes the topic easier to understand.",
+      depth: 2
+    }),
+    makeFallbackNode({
+      id: `${rootId}-adjacent`,
+      title: `Adjacent supporting context for ${rootTitle}`,
+      role: "supporting",
+      reason: "Optional context to round out your understanding.",
+      depth: 2
+    })
+  ];
+}
+
+function pickFallbackPrimaryAnchors(candidates, rootId, rootTitle) {
+  const templates = buildTemplateFallbackAncestors(rootId, rootTitle);
+  const overview = candidates.find((item) => item.role === "overview") || templates[0];
+  const foundation = candidates.find((item) => item.role === "seminal") || templates[1];
+  const methodology =
+    candidates.find((item) => item.role === "starting_point" || item.role === "supporting") || templates[2];
+
+  return { overview, foundation, methodology, templates };
+}
+
+function synthesizeFallbackHierarchy(rootNode, candidates = []) {
+  const rootId = rootNode.id;
+  const rootTitle = rootNode.title;
+  const { overview, foundation, methodology, templates } = pickFallbackPrimaryAnchors(candidates, rootId, rootTitle);
+  const primaryIds = new Set([overview.id, foundation.id, methodology.id]);
+  const remaining = candidates.filter((item) => !primaryIds.has(item.id));
+
+  const overviewChildren = remaining.filter((item) => item.role === "overview").slice(0, 1);
+  const foundationChildren = remaining.filter((item) => item.role === "seminal").slice(0, 2);
+  const methodologyChildren = remaining
+    .filter((item) => item.role === "starting_point" || item.role === "supporting")
+    .slice(0, 3);
+
+  const fallbackChildren = [
+    overviewChildren[0] || templates[3],
+    foundationChildren[0] || templates[4],
+    methodologyChildren[0] || templates[5],
+    methodologyChildren[1] || templates[6]
+  ];
+
+  const primaryNodes = [
+    { ...overview, depth: 1, attachToId: rootId },
+    { ...foundation, depth: 1, attachToId: rootId },
+    { ...methodology, depth: 1, attachToId: rootId }
+  ];
+
+  const secondaryNodes = [
+    { ...(overviewChildren[0] || templates[3]), depth: 2, attachToId: overview.id },
+    { ...(foundationChildren[0] || templates[4]), depth: 2, attachToId: foundation.id },
+    { ...(methodologyChildren[0] || templates[5]), depth: 2, attachToId: methodology.id },
+    { ...(methodologyChildren[1] || templates[6]), depth: 2, attachToId: methodology.id }
+  ];
+
+  return dedupeByTitle([...primaryNodes, ...secondaryNodes]).slice(0, 8);
+}
+
+async function buildFallbackTree(paper) {
   const rootTitle = paper?.title || paper?.query || "Selected paper";
   const rootId = pickIdentifier(paper) || rootTitle;
   const queryProfile = classifyQuery(paper?.query || paper?.title || "");
-  const suggestedAncestors = [
+  let guidedCandidates = [];
+
+  try {
+    const externalCandidates = await fetchExternalPapers(paper?.query || paper?.title || rootTitle, 10);
+    guidedCandidates = externalCandidates.map((item) =>
+      makeFallbackNode({
+        id: item.paperId || item.id || item.doi || item.title,
+        title: item.title || "Untitled paper",
+        role: item.role || "supporting",
+        reason: item.matchReason || item.roleReason || "Suggested supporting context",
+        depth: item.role === "seminal" ? 2 : 1,
+        source: item.source || "semantic_scholar",
+        authors: Array.isArray(item.authors) ? item.authors : [],
+        year: item.year ?? null,
+        abstract: item.abstract || "",
+        doi: item.doi || null,
+        paperId: item.paperId || item.externalId || item.id || null,
+        influenceScore: Number.isFinite(Number(item.influenceScore)) ? Number(item.influenceScore) : 0,
+        citationCount: Number.isFinite(Number(item.citationCount)) ? Number(item.citationCount) : 0
+      })
+    );
+  } catch (error) {
+    guidedCandidates = [];
+  }
+
+  const suggestedAncestors = synthesizeFallbackHierarchy(
     {
-      id: `${rootId}-ancestor-1`,
-      title: `Foundational work behind ${rootTitle}`,
-      role: "seminal",
-      roleLabel: "Seminal Paper",
-      reason: "Likely foundational background"
+      id: rootId,
+      title: rootTitle
     },
-    {
-      id: `${rootId}-ancestor-2`,
-      title: `Earlier survey related to ${rootTitle}`,
-      role: "overview",
-      roleLabel: "Overview Paper",
-      reason: "Helpful overview while live citation data is unavailable"
-    },
-    {
-      id: `${rootId}-ancestor-3`,
-      title: `Supporting methodology cited by ${rootTitle}`,
-      role: "supporting",
-      roleLabel: "Supporting Paper",
-      reason: "Suggested supporting context"
-    }
-  ];
+    guidedCandidates
+  );
 
   const nodes = [{
     id: rootId,
@@ -752,16 +1182,17 @@ function buildFallbackTree(paper) {
       id: item.id,
       title: item.title,
       label: item.title,
-      depth: 1,
-      abstract: item.reason,
-      citationCount: 0,
-      influenceScore: 0,
-      doi: null,
-      paperId: item.id,
-      source: "fallback",
-      authors: []
+      depth: item.depth || 1,
+      abstract: item.abstract || item.reason,
+      citationCount: Number.isFinite(Number(item.citationCount)) ? Number(item.citationCount) : 0,
+      influenceScore: Number.isFinite(Number(item.influenceScore)) ? Number(item.influenceScore) : 0,
+      doi: item.doi || null,
+      paperId: item.paperId || item.id,
+      source: item.source || "fallback",
+      authors: Array.isArray(item.authors) ? item.authors : [],
+      year: item.year ?? null
     });
-    links.push({ source: rootId, target: item.id });
+    links.push({ source: item.attachToId || rootId, target: item.id });
   });
 
   const readingPlan = buildReadingPlan(suggestedAncestors, { queryProfile });
@@ -786,12 +1217,12 @@ function buildFallbackTree(paper) {
         guide: {
           title: `Start with ${rootTitle}`,
           summary:
-            "PaperTrail could not fetch live citation data, so this is a placeholder reading path to keep exploration moving.",
+            "PaperTrail could not fetch live citation ancestry for this seed, so it synthesized a broader guided learning tree from related papers and topic context.",
           recommendedOrder: suggestedAncestors,
           readingPlan,
           companionResources
         },
-        note: "Live citation data was unavailable, so a placeholder ancestor view was generated."
+        note: "Live citation ancestry was unavailable for this seed, so PaperTrail generated a guided fallback tree from related papers and topic context."
       }
     }
   };
@@ -911,7 +1342,7 @@ function buildGuide(nodes, rootNode) {
   const prioritized = ancestorNodes
     .slice()
     .sort((left, right) => scoreAncestorNode(right, rootNode, queryProfile) - scoreAncestorNode(left, rootNode, queryProfile))
-    .slice(0, 4)
+    .slice(0, 8)
     .map((node, index) => {
       const roleMeta = classifyPaperRole(node, queryProfile, { depth: node.depth, rootYear: rootNode.year });
       const storyStage =
@@ -962,35 +1393,85 @@ function buildGuide(nodes, rootNode) {
   };
 }
 
-async function fetchAncestorTree(seedPaper, options = {}) {
-  const depthLimit = Math.max(1, Math.min(Number(options.depth) || 2, 3));
-  const breadthLimit = Math.max(1, Math.min(Number(options.breadth) || 3, 5));
-  const totalNodeLimit = Math.max(4, Math.min(Number(options.maxNodes) || 12, 20));
+function chooseTreeBudget(rootPaper, options = {}, seedPaper = {}) {
+  const explicitDepth = Number(options.depth);
+  const explicitBreadth = Number(options.breadth);
+  const explicitMaxNodes = Number(options.maxNodes);
 
+  if (Number.isFinite(explicitDepth) || Number.isFinite(explicitBreadth) || Number.isFinite(explicitMaxNodes)) {
+    return {
+      depthLimit: Math.max(1, Math.min(explicitDepth || 3, 4)),
+      breadthLimit: Math.max(1, Math.min(explicitBreadth || 4, 6)),
+      totalNodeLimit: Math.max(6, Math.min(explicitMaxNodes || 18, 28))
+    };
+  }
+
+  const references = Array.isArray(rootPaper?.references) ? rootPaper.references.length : 0;
+  const citationCount = Number.isFinite(Number(rootPaper?.citationCount)) ? Number(rootPaper.citationCount) : 0;
+  const queryProfile = classifyQuery(seedPaper?.query || seedPaper?.title || rootPaper?.title || "");
+  const clarification = normalizeClarification(seedPaper?.clarification);
+  const strongSeed =
+    references >= 6 ||
+    citationCount >= 120 ||
+    Boolean(rootPaper?.paperId && rootPaper?.doi) ||
+    Boolean(clarification.focus || clarification.material || clarification.goal);
+
+  return {
+    depthLimit: strongSeed ? 4 : 3,
+    breadthLimit: strongSeed ? 5 : 4,
+    totalNodeLimit: strongSeed && queryProfile.broadTopic ? 22 : strongSeed ? 20 : 18
+  };
+}
+
+async function fetchAncestorTree(seedPaper, options = {}) {
   try {
     const rootPaper = await resolvePaperSeed(seedPaper);
+    const { depthLimit, breadthLimit, totalNodeLimit } = chooseTreeBudget(rootPaper, options, seedPaper);
+    const queryProfile = classifyQuery(seedPaper?.query || seedPaper?.title || rootPaper?.title || "");
+    const scoringRoot = buildNode(rootPaper, 0);
+    scoringRoot.query = seedPaper?.query || seedPaper?.title || rootPaper?.title || "";
     const nodes = [];
     const links = [];
+    const linkKeys = new Set();
     const queue = [{ paper: rootPaper, depth: 0 }];
     const visited = new Set();
+    const paperCache = new Map();
+
+    const rootIdentifier = pickIdentifier(rootPaper);
+    if (rootIdentifier) paperCache.set(rootIdentifier, rootPaper);
+    if (rootPaper?.paperId) paperCache.set(rootPaper.paperId, rootPaper);
+    if (rootPaper?.externalIds?.DOI) paperCache.set(rootPaper.externalIds.DOI, rootPaper);
 
     while (queue.length > 0 && nodes.length < totalNodeLimit) {
       const current = queue.shift();
-      const currentNode = buildNode(current.paper, current.depth);
+      const expandedPaper =
+        current.depth === 0 || current.depth >= depthLimit
+          ? current.paper
+          : await hydratePaperForExpansion(current.paper, paperCache);
+      const currentNode = buildNode(expandedPaper, current.depth);
       if (!currentNode.id || visited.has(currentNode.id)) continue;
       visited.add(currentNode.id);
       nodes.push(currentNode);
 
       if (current.depth >= depthLimit) continue;
 
-      const references = dedupeByTitle(Array.isArray(current.paper.references) ? current.paper.references : [])
-        .slice(0, breadthLimit);
+      const references = selectReferenceCandidates(
+        Array.isArray(expandedPaper.references) ? expandedPaper.references : [],
+        scoringRoot,
+        queryProfile,
+        current.depth + 1,
+        referenceBreadthForDepth(current.depth, breadthLimit)
+      );
 
       for (const reference of references) {
         const childNode = buildNode(reference, current.depth + 1);
         if (!childNode.id) continue;
 
-        links.push({ source: currentNode.id, target: childNode.id });
+        const linkKey = `${currentNode.id}->${childNode.id}`;
+        if (!linkKeys.has(linkKey)) {
+          linkKeys.add(linkKey);
+          links.push({ source: currentNode.id, target: childNode.id });
+        }
 
         if (!visited.has(childNode.id) && nodes.length + queue.length < totalNodeLimit) {
           queue.push({ paper: reference, depth: current.depth + 1 });
@@ -1005,17 +1486,29 @@ async function fetchAncestorTree(seedPaper, options = {}) {
     };
     rootNode.query = seedPaper?.query || seedPaper?.title || "";
 
+    const desiredMinimumNodes = Math.min(totalNodeLimit, 9);
+    const maybeSupplemented =
+      nodes.length < desiredMinimumNodes
+        ? await supplementSparseLineage({
+            rootNode,
+            nodes,
+            links,
+            queryProfile,
+            totalNodeLimit
+          })
+        : { nodes, links };
+
     return {
       data: {
-        nodes,
-        links,
+        nodes: maybeSupplemented.nodes,
+        links: maybeSupplemented.links,
         meta: {
           source: "semantic_scholar",
           rootId: rootNode.id,
           rootTitle: rootNode.title,
           depthLimit,
           breadthLimit,
-          guide: buildGuide(nodes, rootNode)
+          guide: buildGuide(maybeSupplemented.nodes, rootNode)
         }
       }
     };
@@ -1026,7 +1519,11 @@ async function fetchAncestorTree(seedPaper, options = {}) {
 
 async function searchPapersByQuery(query, limit = 20) {
   const queryProfile = classifyQuery(query);
-  const results = await fetchExternalPapers(query, limit);
+  let clarification = null;
+  if (arguments.length >= 3) {
+    clarification = arguments[2];
+  }
+  const results = await fetchExternalPapers(query, limit, clarification);
   return {
     data: results,
     meta: {
@@ -1040,13 +1537,19 @@ module.exports = {
   fetchAncestorTree,
   __private: {
     buildCompanionResources,
+    buildSupplementalAncestorCandidates,
     buildCandidateQueries,
     buildGuide,
     buildNode,
     buildReadingPlan,
     classifyQuery,
     classifyPaperRole,
+    chooseTreeBudget,
     inferMatchReason,
+    normalizeClarification,
+    referenceBreadthForDepth,
+    scoreClarificationFit,
+    selectReferenceCandidates,
     scoreAncestorNode,
     scoreSeedPaper
   }
