@@ -179,10 +179,10 @@ function buildTreeLayout(graph, width, height) {
   const cards = [];
   const positions = new Map();
   const safeWidth = Math.max(width, 320);
-  const topPadding = 28;
-  const bottomPadding = 36;
+  const topPadding = 34;
+  const bottomPadding = 42;
   const centerX = safeWidth / 2;
-  const trunkGap = clamp((height - topPadding - bottomPadding) / Math.max(trunk.length - 1, 1), 96, 132);
+  const trunkGap = clamp((height - topPadding - bottomPadding) / Math.max(trunk.length - 1, 1), 92, 124);
 
   const addCard = (node, x, y, variant, popoverSide) => {
     const popoverWidth =
@@ -209,12 +209,8 @@ function buildTreeLayout(graph, width, height) {
 
   trunk.forEach((node, index) => {
     const isSeed = node.id === rootNode.id;
-    const routeLean = isSeed ? 0 : (index % 2 === 0 ? -18 : 18);
-    const x = centerX + routeLean;
-    let popSide;
-    if (x < safeWidth / 2 - 12) popSide = "right";
-    else if (x > safeWidth / 2 + 12) popSide = "left";
-    else popSide = index % 2 === 0 ? "right" : "left";
+    const x = centerX;
+    const popSide = index % 2 === 0 ? "right" : "left";
     addCard(node, x, topPadding + index * trunkGap, isSeed ? "seed" : "route", popSide);
   });
 
@@ -233,11 +229,11 @@ function buildTreeLayout(graph, width, height) {
     items.forEach((node, index) => {
       const side = index % 2 === 0 ? -1 : 1;
       const branchRank = Math.floor(index / 2);
-      const xOffset = clamp(safeWidth * 0.21, 96, 190) + branchRank * clamp(safeWidth * 0.08, 32, 68);
-      const yOffset = branchRank * 18;
-      const branchBaseY = parentCard.y + (parentCard.variant === "seed" ? -18 : 8) + yOffset;
+      const xOffset = clamp(safeWidth * 0.24, 112, 210) + branchRank * clamp(safeWidth * 0.06, 24, 54);
+      const yOffset = 54 + branchRank * 48;
+      const branchBaseY = parentCard.y - yOffset;
       const x = clamp(parentCard.x + side * xOffset, 120, safeWidth - 120);
-      const y = clamp(branchBaseY, topPadding + 30, height - 70);
+      const y = clamp(branchBaseY, topPadding + 10, height - 86);
       let popSide;
       if (x < safeWidth / 2 - 12) popSide = "right";
       else if (x > safeWidth / 2 + 12) popSide = "left";
@@ -267,10 +263,11 @@ function linkPath(edge) {
   const startY = sourceBottomY;
   const endX = target.x;
   const endY = targetTopY;
-  const midY = startY + (endY - startY) * 0.52;
-  const controlSpread = Math.abs(endX - startX) * 0.28;
+  const deltaX = endX - startX;
+  const midY = startY + (endY - startY) * 0.58;
+  const bendX = startX + deltaX * 0.28;
 
-  return `M ${startX} ${startY} C ${startX} ${midY}, ${endX - Math.sign(endX - startX || 1) * controlSpread} ${midY}, ${endX} ${endY}`;
+  return `M ${startX} ${startY} C ${startX} ${midY}, ${bendX} ${midY}, ${endX} ${endY}`;
 }
 
 export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
