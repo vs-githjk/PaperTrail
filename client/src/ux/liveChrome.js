@@ -240,7 +240,7 @@ export function mountLiveChrome(root) {
   if (prefersReducedMotion()) return () => {};
 
   const btnSel =
-    "button.pt-btn-primary, button.secondary-btn, button.workbench-refresh-btn, button.nav-link-btn, button.modal-close-btn, button.tree-node-badge-btn, button.hero-inline-btn, a.paper-link-btn, button.text-link-btn, button.save-paper-btn, button.tree-cta, button.inspector-seed-btn, button.pt-btn-destructive, button.history-remove-btn, button.history-clear-all-btn, button.seed-chip, button.workspace-btn, button.paper-btn, button.brand-home-btn";
+    "button.pt-btn-primary, button.secondary-btn, button.workbench-refresh-btn, button.theme-toggle-btn, button.nav-link-btn, button.modal-close-btn, button.tree-node-badge-btn, button.hero-inline-btn, a.paper-link-btn, button.text-link-btn, button.save-paper-btn, button.tree-cta, button.inspector-seed-btn, button.pt-btn-destructive, button.history-remove-btn, button.history-clear-all-btn, button.seed-chip, button.workspace-btn, button.workspace-dismiss-btn, button.workspace-undo-toast-action, button.paper-btn, button.brand-home-btn";
 
   /** @type {(() => void)[]} */
   let cleanups = [];

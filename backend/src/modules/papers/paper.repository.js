@@ -341,6 +341,50 @@ class PaperRepository {
       });
     }
   }
+
+  async deletePaperById(paperId) {
+    const id = Number(paperId);
+    if (!Number.isFinite(id) || id <= 0) {
+      return { deleted: 0 };
+    }
+
+    try {
+      const result = await pgPool.query("DELETE FROM papers WHERE id = $1", [id]);
+      return { deleted: result.rowCount || 0 };
+    } catch (error) {
+      const idx = memorySavedPapers.findIndex((paper) => Number(paper.id) === id);
+      if (idx >= 0) {
+        memorySavedPapers.splice(idx, 1);
+        return { deleted: 1 };
+      }
+      return { deleted: 0 };
+    }
+  }
+
+  async deleteResearchSessionForUser(sessionId, userId) {
+    const id = Number(sessionId);
+    const uid = Number(userId);
+    if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(uid) || uid <= 0) {
+      return { deleted: 0 };
+    }
+
+    try {
+      const result = await pgPool.query(
+        "DELETE FROM research_sessions WHERE id = $1 AND user_id = $2",
+        [id, uid]
+      );
+      return { deleted: result.rowCount || 0 };
+    } catch (error) {
+      const idx = memoryResearchSessions.findIndex(
+        (session) => Number(session.id) === id && Number(session.userId) === uid
+      );
+      if (idx >= 0) {
+        memoryResearchSessions.splice(idx, 1);
+        return { deleted: 1 };
+      }
+      return { deleted: 0 };
+    }
+  }
 }
 
 module.exports = new PaperRepository();

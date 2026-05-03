@@ -15,9 +15,12 @@ function isDevLocalhostOrigin(origin) {
   }
 }
 
+const corsAllowedHeaders = ["Authorization", "Content-Type", "Accept"];
+
 const corsOptions = config.corsOrigins.length === 0
-  ? undefined
+  ? { allowedHeaders: corsAllowedHeaders }
   : {
+      allowedHeaders: corsAllowedHeaders,
       origin(origin, callback) {
         if (!origin || config.corsOrigins.includes(origin)) {
           callback(null, true);

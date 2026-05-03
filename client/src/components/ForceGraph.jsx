@@ -50,7 +50,7 @@ export default function ForceGraph({ data }) {
       .data(links)
       .enter()
       .append("line")
-      .attr("stroke", "#9b9b9b")
+      .attr("stroke", "var(--pt-graph-link-stroke)")
       .attr("stroke-width", 1.2);
 
     const node = svg
@@ -60,7 +60,7 @@ export default function ForceGraph({ data }) {
       .enter()
       .append("circle")
       .attr("r", 7)
-      .attr("fill", "#000")
+      .attr("fill", "var(--pt-graph-node-fill)")
       .call(
         d3
           .drag()
@@ -90,7 +90,7 @@ export default function ForceGraph({ data }) {
       .append("text")
       .text((d) => d.year ? `${d.title} (${d.year})` : (d.title || d.label || d.id))
       .attr("font-size", 11)
-      .attr("fill", "#1f2937")
+      .attr("fill", "var(--pt-graph-label-fill)")
       .attr("dx", 10)
       .attr("dy", 4);
 

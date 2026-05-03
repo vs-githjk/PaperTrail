@@ -2,7 +2,16 @@ import { useEffect, useRef } from "react";
 import { Renderer, Camera, Geometry, Program, Mesh } from "ogl";
 import "./Particles.css";
 
-const defaultColors = ["#ffffff", "#ffffff", "#ffffff"];
+function readParticlePaletteFromDom() {
+  const root = document.documentElement;
+  const cs = getComputedStyle(root);
+  const keys = ["--pt-particle-canvas-1", "--pt-particle-canvas-2", "--pt-particle-canvas-3", "--pt-particle-canvas-4"];
+  const fallback = cs.getPropertyValue("--pt-particle-canvas-1").trim();
+  return keys.map((key) => {
+    const value = cs.getPropertyValue(key).trim();
+    return value || fallback;
+  });
+}
 
 function hexToRgb(hex) {
   const normalized = hex.replace(/^#/, "");
@@ -156,7 +165,7 @@ export default function Particles({
     const positions = new Float32Array(particleCount * 3);
     const randoms = new Float32Array(particleCount * 4);
     const colors = new Float32Array(particleCount * 3);
-    const palette = particleColors?.length ? particleColors : defaultColors;
+    const palette = particleColors?.length ? particleColors : readParticlePaletteFromDom();
 
     for (let index = 0; index < particleCount; index += 1) {
       let x;

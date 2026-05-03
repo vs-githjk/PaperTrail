@@ -3,6 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 const TREE_LEFT_GUTTER = 288;
 const TREE_RIGHT_GUTTER = 90;
 
+const BRANCH_LEGEND = [
+  { type: "current", short: "Seed", description: "Current paper" },
+  { type: "overview", short: "Ov", description: "Overview branch" },
+  { type: "foundational_theory", short: "Th", description: "Foundational theory" },
+  { type: "methodology", short: "Me", description: "Methods / models" },
+  { type: "applied_supporting", short: "Ap", description: "Applied / supporting" }
+];
+
 function normalizeGraphData(data) {
   const guide = data?.data?.meta?.guide || data?.meta?.guide || null;
   const stageMap = new Map();
@@ -18,6 +26,8 @@ function normalizeGraphData(data) {
     }
   }
 
+  const branchMap = new Map();
+
   if (guide && Array.isArray(guide.recommendedOrder)) {
     guide.recommendedOrder.forEach((item, index) => {
       reasonMap.set(item.id, item.reason || "");
@@ -25,6 +35,13 @@ function normalizeGraphData(data) {
       routeIndexMap.set(item.id, index);
       if (!stageMap.has(item.id)) {
         stageMap.set(item.id, index === 0 ? "start_here" : "optional_supporting");
+      }
+      if (item.branchType) {
+        branchMap.set(item.id, {
+          branchType: item.branchType,
+          branchLabel: item.branchLabel || "",
+          branchReason: item.branchReason || ""
+        });
       }
     });
   }
@@ -45,25 +62,31 @@ function normalizeGraphData(data) {
     return { nodes: [], links: [] };
   }
 
-  const mappedNodes = nodes.map((node, index) => ({
-    id: node.id ?? node.paperId ?? `node-${index}`,
-    title: node.title || node.label || "Untitled paper",
-    year: node.year || null,
-    kind: index === 0 ? "seed" : "ancestor",
-    doi: node.doi || null,
-    paperId: node.paperId || node.externalId || node.id || null,
-    source: node.source || null,
-    url: node.url || null,
-    depth: Number.isFinite(Number(node.depth)) ? Number(node.depth) : index === 0 ? 0 : 1,
-    citationCount: Number.isFinite(Number(node.citationCount)) ? Number(node.citationCount) : 0,
-    influenceScore: Number.isFinite(Number(node.influenceScore)) ? Number(node.influenceScore) : 0,
-    authors: Array.isArray(node.authors) ? node.authors : [],
-    abstract: node.abstract || "",
-    stage: stageMap.get(node.id) || (index === 0 ? "start_here" : "optional_supporting"),
-    storyReason: reasonMap.get(node.id) || "",
-    storyRole: roleMap.get(node.id) || null,
-    routeIndex: index === 0 ? -1 : routeIndexMap.has(node.id) ? routeIndexMap.get(node.id) : null
-  }));
+  const mappedNodes = nodes.map((node, index) => {
+    const fromGuide = branchMap.get(node.id);
+    return {
+      id: node.id ?? node.paperId ?? `node-${index}`,
+      title: node.title || node.label || "Untitled paper",
+      year: node.year || null,
+      kind: index === 0 ? "seed" : "ancestor",
+      doi: node.doi || null,
+      paperId: node.paperId || node.externalId || node.id || null,
+      source: node.source || null,
+      url: node.url || null,
+      depth: Number.isFinite(Number(node.depth)) ? Number(node.depth) : index === 0 ? 0 : 1,
+      citationCount: Number.isFinite(Number(node.citationCount)) ? Number(node.citationCount) : 0,
+      influenceScore: Number.isFinite(Number(node.influenceScore)) ? Number(node.influenceScore) : 0,
+      authors: Array.isArray(node.authors) ? node.authors : [],
+      abstract: node.abstract || "",
+      stage: stageMap.get(node.id) || (index === 0 ? "start_here" : "optional_supporting"),
+      storyReason: reasonMap.get(node.id) || "",
+      storyRole: roleMap.get(node.id) || null,
+      routeIndex: index === 0 ? -1 : routeIndexMap.has(node.id) ? routeIndexMap.get(node.id) : null,
+      branchType: node.branchType || fromGuide?.branchType || null,
+      branchLabel: node.branchLabel || fromGuide?.branchLabel || "",
+      branchReason: node.branchReason || fromGuide?.branchReason || ""
+    };
+  });
 
   const mappedLinks = links.map((edge) => ({
     source: typeof edge.source === "object" ? edge.source.id : edge.source,
@@ -101,12 +124,12 @@ function buildLineageLinks(nodes, rawLinks, guide) {
   const nextLinks = [];
   const seenPairs = new Set();
 
-  const pushLink = (source, target, kind = "context") => {
+  const pushLink = (source, target, kind = "context", branchType = "applied_supporting") => {
     if (!source || !target || source === target) return;
     const key = `${source}->${target}`;
     if (seenPairs.has(key)) return;
     seenPairs.add(key);
-    nextLinks.push({ source, target, kind });
+    nextLinks.push({ source, target, kind, branchType });
   };
 
   const chooseDescendant = (node) => {
@@ -152,23 +175,24 @@ function buildLineageLinks(nodes, rawLinks, guide) {
     })
     .forEach((node) => {
       const descendant = chooseDescendant(node);
-      pushLink(node.id, descendant.id, coreIds.has(node.id) ? "lineage" : "context");
+      const bt = node.branchType || "applied_supporting";
+      pushLink(node.id, descendant.id, coreIds.has(node.id) ? "lineage" : "context", bt);
     });
 
   return nextLinks.length > 0 ? nextLinks : rawLinks;
 }
 
 function getStageColor(stage, isSeed = false) {
-  if (isSeed) return "#6d28d9";
+  if (isSeed) return "var(--pt-ancestor-stage-seed)";
   switch (stage) {
     case "start_here":
-      return "#8b5cf6";
+      return "var(--pt-ancestor-stage-start)";
     case "foundational_background":
-      return "#7c3aed";
+      return "var(--pt-ancestor-stage-foundational)";
     case "broader_overview":
-      return "#a78bfa";
+      return "var(--pt-ancestor-stage-overview)";
     default:
-      return "#c4b5fd";
+      return "var(--pt-ancestor-stage-default)";
   }
 }
 
@@ -221,7 +245,7 @@ function buildTreeLayout(graph, width, height) {
   const maxDepth = Math.max(...graph.nodes.map((node) => Number(node.depth) || 0), 0);
   const leftGutter = TREE_LEFT_GUTTER;
   const rightGutter = TREE_RIGHT_GUTTER;
-  const topPadding = 74;
+  const topPadding = 96;
   const bottomPadding = 76;
   const usableWidth = Math.max(220, safeWidth - leftGutter - rightGutter);
   const centerX = leftGutter + usableWidth / 2;
@@ -316,7 +340,9 @@ function buildTreeLayout(graph, width, height) {
       const source = positions.get(link.source);
       const target = positions.get(link.target);
       if (!source || !target) return null;
-      return { ...link, source, target };
+      const branchType =
+        link.branchType || byId.get(typeof link.source === "string" ? link.source : link.source?.id)?.branchType || "applied_supporting";
+      return { ...link, source, target, branchType };
     })
     .filter(Boolean);
 
@@ -375,15 +401,29 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
 
   const layout = useMemo(() => buildTreeLayout(graph, width, height), [graph, width, height]);
   const nodeCount = graph.nodes.length;
+  const branchTypesPresent = useMemo(() => {
+    const s = new Set(graph.nodes.map((n) => n.branchType).filter(Boolean));
+    return s;
+  }, [graph.nodes]);
 
   return (
     <div className="ancestor-tree-stack">
       <div ref={containerRef} className="ancestor-canvas-shell">
         {hasGraph ? (
           <div className="ancestor-tree-surface" style={{ minHeight: height }}>
-            <div className="ancestor-tree-summary">
-              <span>{nodeCount} papers mapped</span>
-              <span>{layout.maxDepth + 1} learning layers</span>
+            <div className="ancestor-tree-top-chrome">
+              <div className="ancestor-tree-summary">
+                <span>{nodeCount} papers mapped</span>
+                <span>{layout.maxDepth + 1} learning layers</span>
+              </div>
+              <div className="ancestor-tree-branch-legend" aria-label="Branch types on this map">
+                {BRANCH_LEGEND.filter((entry) => entry.type === "current" || branchTypesPresent.has(entry.type)).map((entry) => (
+                  <span key={entry.type} className={`ancestor-branch-chip ancestor-branch-chip-${entry.type}`} title={entry.description}>
+                    <i aria-hidden="true" />
+                    {entry.short}
+                  </span>
+                ))}
+              </div>
             </div>
             <div className="ancestor-tree-layers" aria-hidden="true">
               {layout.layerLabels.map((layer) => (
@@ -433,6 +473,7 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
                     <button
                       type="button"
                       className="tree-node-badge-btn"
+                      data-branch={card.branchType || "current"}
                       aria-label={badgeAria}
                       title={card.variant === "seed" ? "Your starting paper (the one you searched)" : undefined}
                       onClick={() => onNodeSelect?.(graphNode)}
@@ -445,6 +486,12 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
                       onClick={() => onNodeSelect?.(graphNode)}
                     >
                       <div className="tree-node-copy">
+                        {card.branchLabel ? (
+                          <p className="tree-node-branch-caption">
+                            <span className="tree-node-branch-label">{card.branchLabel}</span>
+                            {card.branchReason ? <span className="tree-node-branch-reason"> — {card.branchReason}</span> : null}
+                          </p>
+                        ) : null}
                         <p className="tree-node-title">{card.title || "Untitled paper"}</p>
                         {card.year ? <small>{card.year}</small> : null}
                       </div>
@@ -455,13 +502,17 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
             </div>
 
             <svg className="ancestor-tree-svg" viewBox={`0 0 ${Math.max(width, 720)} ${height}`} aria-hidden="true">
-              {layout.edges.map((edge) => (
-                <path
-                  key={`${edge.source.id}-${edge.target.id}`}
-                  d={linkPath(edge)}
-                  className={edge.kind === "lineage" ? "ancestor-link ancestor-link-lineage" : "ancestor-link ancestor-link-context"}
-                />
-              ))}
+              {layout.edges.map((edge) => {
+                const bt = edge.branchType || "applied_supporting";
+                const lineage = edge.kind === "lineage" ? "ancestor-link-lineage" : "ancestor-link-context";
+                return (
+                  <path
+                    key={`${edge.source.id}-${edge.target.id}-${bt}`}
+                    d={linkPath(edge)}
+                    className={`ancestor-link ${lineage} ancestor-branch-${bt}`}
+                  />
+                );
+              })}
             </svg>
           </div>
         ) : (
@@ -480,7 +531,7 @@ export default function AncestorTree({ data, onNodeSelect, selectedNodeId }) {
         <p className="insight-title">Knowledge Insight</p>
         <p>
           {hasGraph
-            ? "The ★ marker is your current paper. Filled markers show core ancestors near the center of the lineage; hollow markers show supporting branches. Hover a marker to read the paper title."
+            ? "The ★ marker is your current paper. Marker ring colors match the branch key above (overview, theory, methods, applied). Filled markers are on the main reading spine; hollow markers sit on supporting branches. Hover a marker to read the title."
             : "Lineage details will appear here once a tree is built from a paper."}
         </p>
       </div>

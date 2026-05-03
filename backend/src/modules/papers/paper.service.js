@@ -169,6 +169,36 @@ class PaperService {
     await paperRepository.clearUserSearches(userId);
     return { data: { cleared: true } };
   }
+
+  async deleteSavedPaperForWorkspace(paperId, userId) {
+    if (!userId) {
+      const error = new Error("Unauthorized");
+      error.status = 401;
+      throw error;
+    }
+
+    const { deleted } = await paperRepository.deletePaperById(paperId);
+    if (!deleted) {
+      const error = new Error("Saved paper not found.");
+      error.status = 404;
+      throw error;
+    }
+  }
+
+  async deleteResearchTrailForWorkspace(trailId, userId) {
+    if (!userId) {
+      const error = new Error("Unauthorized");
+      error.status = 401;
+      throw error;
+    }
+
+    const { deleted } = await paperRepository.deleteResearchSessionForUser(trailId, userId);
+    if (!deleted) {
+      const error = new Error("Research trail not found.");
+      error.status = 404;
+      throw error;
+    }
+  }
 }
 
 module.exports = new PaperService();

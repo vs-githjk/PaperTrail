@@ -1,4 +1,12 @@
-import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from "react";
 import AncestorTree from "./components/AncestorTree";
 import Particles from "./components/Particles";
 import { FloatingField } from "./ux/FloatingField";
@@ -6,6 +14,29 @@ import { mountLiveChrome } from "./ux/liveChrome";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
 const WORKBENCH_SESSION_KEY = "papertrail_workbench_v1";
+const WORKSPACE_DELETE_UNDO_MS = 8000;
+
+function subscribeTheme(onStoreChange) {
+  const root = document.documentElement;
+  const observer = new MutationObserver(() => onStoreChange());
+  observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+  return () => observer.disconnect();
+}
+
+function getThemeSnapshot() {
+  return document.documentElement.getAttribute("data-theme") || "light";
+}
+
+function readParticlePaletteFromCss() {
+  const root = document.documentElement;
+  const cs = getComputedStyle(root);
+  const keys = ["--pt-particle-canvas-1", "--pt-particle-canvas-2", "--pt-particle-canvas-3", "--pt-particle-canvas-4"];
+  const fallback = cs.getPropertyValue("--pt-particle-canvas-1").trim();
+  return keys.map((key) => {
+    const value = cs.getPropertyValue(key).trim();
+    return value || fallback;
+  });
+}
 
 function readWorkbenchSession() {
   try {
@@ -314,11 +345,17 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [removingHistoryId, setRemovingHistoryId] = useState(null);
+  const [committingWorkspaceDelete, setCommittingWorkspaceDelete] = useState(false);
+  const [undoToast, setUndoToast] = useState(null);
+  const undoCommitTimerRef = useRef(null);
+  const pendingWorkspaceDeleteRef = useRef(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searchPlan, setSearchPlan] = useState([]);
   const [workspace, setWorkspace] = useState({ recentPapers: [], recentResearch: [] });
+  const themeSnapshot = useSyncExternalStore(subscribeTheme, getThemeSnapshot, () => "light");
+  const particlePaletteFromTokens = useMemo(() => readParticlePaletteFromCss(), [themeSnapshot]);
   const [selectedPaperId, setSelectedPaperId] = useState(null);
   const [graphData, setGraphData] = useState(null);
   const [focusedNode, setFocusedNode] = useState(null);
@@ -379,6 +416,23 @@ export default function App() {
   const savedPaperKeys = new Set(
     workspace.recentPapers.map((paper) => String(paper.externalId || paper.paperId || paper.id || paper.title || ""))
   );
+
+  useLayoutEffect(() => {
+    const toggle = document.getElementById("theme-toggle");
+    const root = document.documentElement;
+    if (!toggle) return undefined;
+    const onClick = () => {
+      root.classList.add("theme-transitioning");
+      const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      localStorage.setItem("theme", next);
+      window.setTimeout(() => {
+        root.classList.remove("theme-transitioning");
+      }, 300);
+    };
+    toggle.addEventListener("click", onClick);
+    return () => toggle.removeEventListener("click", onClick);
+  }, []);
 
   useEffect(() => {
     if (!selectedPaperId || loadingTree) return undefined;
@@ -444,10 +498,11 @@ export default function App() {
   }, [isLoggedIn]);
 
   function getAuthHeaders(extra = {}) {
-    if (!authToken) return extra;
+    const token = String(authToken || localStorage.getItem("papertrail_token") || "").trim();
+    if (!token) return extra;
     return {
       ...extra,
-      Authorization: `Bearer ${authToken}`
+      Authorization: `Bearer ${token}`
     };
   }
 
@@ -490,6 +545,222 @@ export default function App() {
       setRemovingHistoryId(null);
     }
   }
+
+  function clearWorkspaceUndoTimer() {
+    if (undoCommitTimerRef.current) {
+      clearTimeout(undoCommitTimerRef.current);
+      undoCommitTimerRef.current = null;
+    }
+  }
+
+  function flushPendingWorkspaceDeleteSync() {
+    clearWorkspaceUndoTimer();
+    const pending = pendingWorkspaceDeleteRef.current;
+    pendingWorkspaceDeleteRef.current = null;
+    setUndoToast(null);
+    if (!pending) return;
+    setCommittingWorkspaceDelete(true);
+    (async () => {
+      try {
+        if (pending.kind === "paper") {
+          await commitDeleteSavedPaperRequest(pending);
+        } else {
+          await commitDeleteResearchTrailRequest(pending);
+        }
+      } finally {
+        setCommittingWorkspaceDelete(false);
+      }
+    })();
+  }
+
+  async function commitDeleteSavedPaperRequest(pending) {
+    const token = String(authToken || localStorage.getItem("papertrail_token") || "").trim();
+    if (!token) {
+      setError("Sign in again to remove saved papers (session missing or expired).");
+      return;
+    }
+    const id = pending.id;
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE}/api/papers/saved/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (response.status === 401) {
+        setError("Sign in again to remove saved papers (session missing or expired).");
+        setWorkspace((prev) => ({
+          ...prev,
+          recentPapers: [
+            pending.snapshot,
+            ...prev.recentPapers.filter((paper) => Number(paper.id) !== id)
+          ]
+        }));
+        return;
+      }
+      if (response.status === 404) {
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`Remove failed: ${response.status}`);
+      }
+    } catch (err) {
+      setError(err.message || "Failed to remove saved paper.");
+      setWorkspace((prev) => ({
+        ...prev,
+        recentPapers: [
+          pending.snapshot,
+          ...prev.recentPapers.filter((paper) => Number(paper.id) !== id)
+        ]
+      }));
+    }
+  }
+
+  async function commitDeleteResearchTrailRequest(pending) {
+    const token = String(authToken || localStorage.getItem("papertrail_token") || "").trim();
+    if (!token) {
+      setError("Sign in again to remove research trails (session missing or expired).");
+      return;
+    }
+    const id = pending.id;
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE}/api/research-trails/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (response.status === 401) {
+        setError("Sign in again to remove research trails (session missing or expired).");
+        setWorkspace((prev) => ({
+          ...prev,
+          recentResearch: [
+            pending.snapshot,
+            ...prev.recentResearch.filter((session) => Number(session.id) !== id)
+          ]
+        }));
+        return;
+      }
+      if (response.status === 404) {
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`Remove failed: ${response.status}`);
+      }
+    } catch (err) {
+      setError(err.message || "Failed to remove research trail.");
+      setWorkspace((prev) => ({
+        ...prev,
+        recentResearch: [
+          pending.snapshot,
+          ...prev.recentResearch.filter((session) => Number(session.id) !== id)
+        ]
+      }));
+    }
+  }
+
+  function undoWorkspaceDelete() {
+    clearWorkspaceUndoTimer();
+    const pending = pendingWorkspaceDeleteRef.current;
+    pendingWorkspaceDeleteRef.current = null;
+    setUndoToast(null);
+    if (!pending) return;
+    if (pending.kind === "paper") {
+      setWorkspace((prev) => ({
+        ...prev,
+        recentPapers: [
+          pending.snapshot,
+          ...prev.recentPapers.filter((paper) => Number(paper.id) !== Number(pending.snapshot.id))
+        ]
+      }));
+    } else {
+      setWorkspace((prev) => ({
+        ...prev,
+        recentResearch: [
+          pending.snapshot,
+          ...prev.recentResearch.filter((session) => Number(session.id) !== Number(pending.snapshot.id))
+        ]
+      }));
+    }
+  }
+
+  function requestRemoveSavedPaperFromWorkspace(paper) {
+    const token = String(authToken || localStorage.getItem("papertrail_token") || "").trim();
+    if (!token || !paper) return;
+    const id = Number(paper.id);
+    if (!Number.isFinite(id) || id <= 0) return;
+    flushPendingWorkspaceDeleteSync();
+    pendingWorkspaceDeleteRef.current = {
+      kind: "paper",
+      id,
+      snapshot: { ...paper }
+    };
+    setWorkspace((prev) => ({
+      ...prev,
+      recentPapers: prev.recentPapers.filter((item) => Number(item.id) !== id)
+    }));
+    setUndoToast({
+      kind: "paper",
+      label: String(paper.title || "Saved paper").trim() || "Saved paper"
+    });
+    undoCommitTimerRef.current = setTimeout(() => {
+      undoCommitTimerRef.current = null;
+      const pending = pendingWorkspaceDeleteRef.current;
+      if (!pending || pending.kind !== "paper" || pending.id !== id) return;
+      pendingWorkspaceDeleteRef.current = null;
+      setUndoToast(null);
+      setCommittingWorkspaceDelete(true);
+      void commitDeleteSavedPaperRequest(pending).finally(() => {
+        setCommittingWorkspaceDelete(false);
+      });
+    }, WORKSPACE_DELETE_UNDO_MS);
+  }
+
+  function requestRemoveResearchTrailFromWorkspace(session) {
+    const token = String(authToken || localStorage.getItem("papertrail_token") || "").trim();
+    if (!token || !session) return;
+    const id = Number(session.id);
+    if (!Number.isFinite(id) || id <= 0) return;
+    flushPendingWorkspaceDeleteSync();
+    pendingWorkspaceDeleteRef.current = {
+      kind: "trail",
+      id,
+      snapshot: { ...session }
+    };
+    setWorkspace((prev) => ({
+      ...prev,
+      recentResearch: prev.recentResearch.filter((item) => Number(item.id) !== id)
+    }));
+    setUndoToast({
+      kind: "trail",
+      label: String(session.selectedPaper?.title || session.query || "Research trail").trim() || "Research trail"
+    });
+    undoCommitTimerRef.current = setTimeout(() => {
+      undoCommitTimerRef.current = null;
+      const pending = pendingWorkspaceDeleteRef.current;
+      if (!pending || pending.kind !== "trail" || pending.id !== id) return;
+      pendingWorkspaceDeleteRef.current = null;
+      setUndoToast(null);
+      setCommittingWorkspaceDelete(true);
+      void commitDeleteResearchTrailRequest(pending).finally(() => {
+        setCommittingWorkspaceDelete(false);
+      });
+    }, WORKSPACE_DELETE_UNDO_MS);
+  }
+
+  useEffect(
+    () => () => {
+      clearWorkspaceUndoTimer();
+      const pending = pendingWorkspaceDeleteRef.current;
+      if (pending) {
+        pendingWorkspaceDeleteRef.current = null;
+        setUndoToast(null);
+        void (pending.kind === "paper"
+          ? commitDeleteSavedPaperRequest(pending)
+          : commitDeleteResearchTrailRequest(pending));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- commit pending delete on unmount only
+    []
+  );
 
   async function clearAllHistory() {
     if (!authToken || history.length === 0) return;
@@ -961,7 +1232,7 @@ export default function App() {
         <div className="cosmos-orb cosmos-orb-bottom" />
         <Particles
           className="cosmos-particles"
-          particleColors={["#ede9fe", "#c4b5fd", "#8b5cf6", "#fafaf9"]}
+          particleColors={particlePaletteFromTokens}
           particleCount={180}
           particleSpread={9}
           speed={0.06}
@@ -1008,6 +1279,26 @@ export default function App() {
             title="Clear search and graph and go back to the home screen"
           >
             +
+          </button>
+          <button
+            type="button"
+            id="theme-toggle"
+            className="theme-toggle-btn"
+            aria-label="Toggle dark theme"
+            title="Toggle light or dark theme"
+          >
+            <svg className="theme-toggle-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"
+              />
+            </svg>
+            <svg className="theme-toggle-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zm12.48 0l1.79-1.79 1.41 1.41-1.79 1.79-1.41-1.41zM12 4V1h-1v3h1zm0 19v-3h-1v3h1zM4 11H1v1h3v-1zm19 0h-3v1h3v-1zM6.76 19.16l-1.42 1.41-1.79-1.79 1.41-1.41 1.8 1.79zm12.48 0l1.41 1.41 1.79-1.79-1.41-1.41-1.79 1.79zM12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12z"
+              />
+            </svg>
           </button>
         </div>
         <div className="nav-actions" ref={navActionsRef}>
@@ -1239,10 +1530,10 @@ export default function App() {
               ) : (
                 <ul className="workspace-list compact-list">
                   {workspace.recentResearch.map((session) => (
-                    <li key={session.id}>
+                    <li key={session.id} className="workspace-card-row">
                       <button
                         type="button"
-                        className="workspace-btn sidebar-item-btn"
+                        className="workspace-btn sidebar-item-btn workspace-card-main"
                         onClick={() => {
                           const selected = session.selectedPaper || {};
                           setQuery(session.query || selected.title || "");
@@ -1252,6 +1543,18 @@ export default function App() {
                         <strong>{session.selectedPaper?.title || "Untitled paper"}</strong>
                         <span>{session.query || "Saved trail"}</span>
                         <span>{formatSessionTime(session.createdAt)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="workspace-dismiss-btn"
+                        disabled={committingWorkspaceDelete}
+                        aria-label="Remove this research trail from the sidebar"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void requestRemoveResearchTrailFromWorkspace(session);
+                        }}
+                      >
+                        ×
                       </button>
                     </li>
                   ))}
@@ -1272,11 +1575,22 @@ export default function App() {
               ) : (
                 <ul className="workspace-list compact-list">
                   {workspace.recentPapers.map((paper) => (
-                    <li key={paper.id || paper.externalId || paper.title}>
-                      <div className="workspace-item sidebar-item-btn">
+                    <li key={paper.id || paper.externalId || paper.title} className="workspace-card-row">
+                      <div className="workspace-item sidebar-item-btn workspace-card-main">
                         <strong>{paper.title}</strong>
                         <span>{paper.year || "Year unknown"} · {getPaperSourceLabel(paper)}</span>
                       </div>
+                      <button
+                        type="button"
+                        className="workspace-dismiss-btn"
+                        disabled={committingWorkspaceDelete}
+                        aria-label="Remove this saved paper from the sidebar"
+                        onClick={() => {
+                          void requestRemoveSavedPaperFromWorkspace(paper);
+                        }}
+                      >
+                        ×
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -1755,6 +2069,20 @@ export default function App() {
           </div>
         </aside>
       </div>
+
+      {undoToast ? (
+        <div className="workspace-undo-toast" role="status" aria-live="polite" aria-atomic="true">
+          <div className="workspace-undo-toast-inner">
+            <span className="workspace-undo-toast-text">
+              {undoToast.kind === "paper" ? "Removed saved paper" : "Removed research trail"}
+              <em className="workspace-undo-toast-title">{undoToast.label}</em>
+            </span>
+            <button type="button" className="workspace-undo-toast-action" onClick={undoWorkspaceDelete}>
+              Undo
+            </button>
+          </div>
+        </div>
+      ) : null}
     </main>
     </WorkbenchErrorBoundary>
   );

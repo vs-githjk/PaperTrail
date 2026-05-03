@@ -43,6 +43,42 @@ test("clarification expands candidate retrieval queries for broad topics", () =>
   assert.ok(candidateQueries.some((query) => query.includes("agents")));
   assert.ok(candidateQueries.some((query) => query.includes("survey")));
   assert.ok(candidateQueries.some((query) => query.includes("from scratch") || query.includes("introduction")));
+  assert.ok(candidateQueries.some((query) => /tutorial|primer|basics|lecture notes/i.test(query)));
+  assert.ok(candidateQueries.length <= 20);
+});
+
+test("broad-topic candidate query list is capped and ranked when clarification is present", () => {
+  const raw = Array.from({ length: 40 }, (_, index) => `llms filler-${index}`);
+  const profile = __private.classifyQuery("llms");
+  const capped = __private.capBroadTopicQueries(raw, profile, { focus: "rag" }, 20);
+  assert.equal(capped.length, 20);
+});
+
+test("clarification gate drops off-direction papers for broad topics with focus", () => {
+  const profile = __private.classifyQuery("rag");
+  const clarification = { focus: "rag", material: "survey", goal: "understand" };
+  const onDirection = {
+    title: "A Survey of Retrieval-Augmented Generation for LLMs",
+    abstract: "We review retrieval augmented generation systems."
+  };
+  const offDirection = {
+    title: "Quantum Error Correction with Surface Codes",
+    abstract: "We study stabilizer codes and fault tolerance."
+  };
+
+  assert.equal(__private.passesClarifiedBroadTopicGate(onDirection, profile, clarification), true);
+  assert.equal(__private.passesClarifiedBroadTopicGate(offDirection, profile, clarification), false);
+});
+
+test("diversifyPapersByTitle prefers non-redundant titles among top-scored items", () => {
+  const papers = [
+    { title: "Graph Neural Networks Survey Part One", abstract: "Overview of gnns.", recommendationScore: 100 },
+    { title: "Graph Neural Networks Survey Part Two", abstract: "Another overview of gnns.", recommendationScore: 99 },
+    { title: "Molecular Property Prediction with GNNs", abstract: "Drug discovery application.", recommendationScore: 50 }
+  ];
+  const picked = __private.diversifyPapersByTitle(papers, 2);
+  assert.equal(picked.length, 2);
+  assert.ok(picked.some((paper) => paper.title.includes("Molecular")));
 });
 
 test("specific paper lookups do not over-expand candidate retrieval queries", () => {
@@ -146,6 +182,61 @@ test("adaptive tree budget allows deeper trees for strong seeds", () => {
 
   assert.equal(budget.depthLimit, 4);
   assert.ok(budget.totalNodeLimit >= 20);
+  assert.equal(budget.adaptiveBudget.qualityTier, "strong");
+  assert.ok(budget.adaptiveBudget.structureScore >= 52);
+});
+
+test("adaptive tree budget stays shallow when only clarification is strong", () => {
+  const budget = __private.chooseTreeBudget(
+    {
+      title: "Obscure Workshop Abstract",
+      citationCount: 2,
+      references: [],
+      paperId: "weak-1"
+    },
+    {},
+    {
+      query: "llms",
+      clarification: { focus: "agents", material: "survey", goal: "understand" }
+    }
+  );
+
+  assert.equal(budget.depthLimit, 2);
+  assert.equal(budget.adaptiveBudget.qualityTier, "sparse");
+  assert.ok(budget.adaptiveBudget.clarificationBump > 0);
+});
+
+test("adaptive tree budget uses standard depth for middling citation graphs", () => {
+  const budget = __private.chooseTreeBudget(
+    {
+      paperId: "mid-1",
+      citationCount: 55,
+      references: [
+        { paperId: "r1" },
+        { paperId: "r2" },
+        { paperId: "r3" },
+        { title: "Unknown predecessor" }
+      ],
+      title: "Reasonable but not landmark paper"
+    },
+    {},
+    { query: "some niche topic" }
+  );
+
+  assert.equal(budget.depthLimit, 3);
+  assert.equal(budget.adaptiveBudget.qualityTier, "standard");
+  assert.equal(budget.totalNodeLimit, 18);
+});
+
+test("explicit depth options bypass quality scoring labels", () => {
+  const budget = __private.chooseTreeBudget(
+    { paperId: "x", references: [], citationCount: 0 },
+    { depth: 2, breadth: 3, maxNodes: 10 },
+    {}
+  );
+
+  assert.equal(budget.depthLimit, 2);
+  assert.equal(budget.adaptiveBudget.qualityTier, "explicit");
 });
 
 test("seed scoring prefers exact title matches for specific paper lookups", () => {
@@ -576,4 +667,49 @@ test("supplemental ancestor candidates enrich sparse trees with broader context"
   assert.equal(candidates[0].role, "overview");
   assert.ok(candidates.some((candidate) => candidate.role === "seminal"));
   assert.ok(candidates.every((candidate) => candidate.attachToId === "root" || candidate.depth >= 2));
+});
+
+test("inferBranchSemantics marks seed depth as current", () => {
+  const profile = __private.classifyQuery("neural networks");
+  const seed = { title: "Seed Paper", depth: 0, year: 2024, abstract: "" };
+  const sem = __private.inferBranchSemantics(seed, profile, { depth: 0, rootYear: 2024 });
+  assert.equal(sem.branchType, "current");
+});
+
+test("inferBranchSemantics classifies survey titles as overview", () => {
+  const profile = __private.classifyQuery("machine learning");
+  const paper = {
+    title: "A Survey of Deep Representation Learning",
+    abstract: "We review representation learning methods.",
+    depth: 1,
+    year: 2022,
+    influenceScore: 40
+  };
+  const sem = __private.inferBranchSemantics(paper, profile, { depth: 1, rootYear: 2024 });
+  assert.equal(sem.branchType, "overview");
+});
+
+test("inferBranchSemantics classifies methodology keywords", () => {
+  const profile = __private.classifyQuery("vision transformers");
+  const paper = {
+    title: "Training Vision Transformers with improved optimization",
+    abstract: "We study gradient-based training and ablation of transformer blocks.",
+    depth: 1,
+    year: 2023,
+    influenceScore: 30
+  };
+  const sem = __private.inferBranchSemantics(paper, profile, { depth: 1, rootYear: 2024 });
+  assert.equal(sem.branchType, "methodology");
+});
+
+test("attachBranchSemantics annotates every graph node", () => {
+  const profile = __private.classifyQuery("topic models");
+  const root = { id: "r", title: "Root", depth: 0, year: 2020, abstract: "" };
+  const nodes = [
+    root,
+    { id: "a", title: "Older bounds on convergence", depth: 2, year: 1998, abstract: "We prove convergence bounds.", influenceScore: 10 }
+  ];
+  const out = __private.attachBranchSemantics(nodes, root, profile);
+  assert.equal(out[0].branchType, "current");
+  assert.equal(out[1].branchType, "foundational_theory");
 });

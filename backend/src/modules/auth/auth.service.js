@@ -96,7 +96,11 @@ class AuthService {
 
   async getUserForToken(token) {
     if (!token) return null;
-    return authRepository.findSessionWithUser(token);
+    try {
+      return await authRepository.findSessionWithUser(token);
+    } catch (error) {
+      return null;
+    }
   }
 }
 

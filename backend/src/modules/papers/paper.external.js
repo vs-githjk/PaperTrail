@@ -94,6 +94,25 @@ const CLARIFICATION_TERMS = {
   }
 };
 
+/** Extra retrieval phrases per goal (broad-topic second stage). */
+const GOAL_RETRIEVAL_PHRASES = {
+  understand: ["tutorial", "primer", "basics", "lecture notes", "explained"],
+  build: ["benchmark", "implementation", "deployment", "code", "system design"],
+  research: ["state of the art", "advances", "open problems", "analysis"]
+};
+
+/** Extra retrieval phrases per material (paired with base topic). */
+const MATERIAL_RETRIEVAL_PHRASES = {
+  survey: ["systematic review", "literature review"],
+  seminal: ["historical impact", "classic paper"],
+  practical: ["engineering", "real world", "case study"],
+  recent: ["2024", "2023", "emerging"]
+};
+
+const BROAD_MERGED_POOL_CAP = 110;
+const BROAD_QUERY_CAP = 20;
+const BROAD_PER_QUERY_LIMIT = 7;
+
 function pickIdentifier(paper) {
   if (!paper || typeof paper !== "object") return "";
   return (
@@ -287,6 +306,98 @@ function classifyPaperRole(paper, queryProfile, context = {}) {
   };
 }
 
+const BRANCH_METHOD_HINTS =
+  /\b(benchmark|dataset|training|architecture|model|transformer|lstm|cnn|gan|diffusion|optimization|gradient|loss function|ablation|hyperparameter|encoder|decoder|fine-?tuning|pretrain|neural|backprop|inference|evaluation metric)\b/i;
+const BRANCH_THEORY_HINTS =
+  /\b(theorem|proof|bound|complexity|convergence|information theory|statistical learning|generalization|probabilistic model|bayesian|vc dimension|minimax|regret)\b/i;
+const BRANCH_APPLIED_HINTS =
+  /\b(clinical|hospital|iot|industry|deployment|real-?world|application|user study|production|robotics|autonomous|sensor|edge device|federated)\b/i;
+
+/**
+ * Semantic branch type for guided-map teaching (deterministic heuristics).
+ * @returns {{ branchType: string, branchLabel: string, branchReason: string }}
+ */
+function inferBranchSemantics(paper, queryProfile, context = {}) {
+  const depth = Number(context.depth ?? paper.depth ?? 0);
+  const title = String(paper.title || "");
+  const abstract = String(paper.abstract || "");
+  const text = `${title} ${abstract}`;
+  const rootYear = Number(context.rootYear || 0);
+  const year = Number(paper.year || 0);
+  const ageGap = rootYear > 0 && year > 0 ? rootYear - year : 0;
+  const roleMeta = classifyPaperRole(paper, queryProfile, { depth, rootYear });
+
+  if (depth <= 0) {
+    return {
+      branchType: "current",
+      branchLabel: "Current paper",
+      branchReason: "The seed paper this map is built around."
+    };
+  }
+
+  if (roleMeta.role === "overview" || hasSurveyHint(title)) {
+    if (queryProfile?.broadTopic && isOffDomainOverviewCandidate(paper, queryProfile)) {
+      return {
+        branchType: "applied_supporting",
+        branchLabel: "Related read",
+        branchReason: roleMeta.roleReason
+      };
+    }
+    return {
+      branchType: "overview",
+      branchLabel: "Overview branch",
+      branchReason: "Surveys and framing papers that orient you across the topic."
+    };
+  }
+
+  if (BRANCH_METHOD_HINTS.test(text)) {
+    return {
+      branchType: "methodology",
+      branchLabel: "Methods branch",
+      branchReason: "Models, training, and experimental machinery that later work builds on."
+    };
+  }
+
+  if (roleMeta.role === "seminal" || ageGap >= 10 || BRANCH_THEORY_HINTS.test(text)) {
+    return {
+      branchType: "foundational_theory",
+      branchLabel: "Foundational theory",
+      branchReason: "Older or theoretical work that shapes assumptions up the lineage."
+    };
+  }
+
+  if (BRANCH_APPLIED_HINTS.test(text)) {
+    return {
+      branchType: "applied_supporting",
+      branchLabel: "Applied context",
+      branchReason: "Applied or domain-specific angles that sit beside the main technical spine."
+    };
+  }
+
+  if (roleMeta.role === "supporting" || depth >= 2) {
+    return {
+      branchType: "applied_supporting",
+      branchLabel: "Supporting branch",
+      branchReason: roleMeta.roleReason || "Supporting papers that round out the story without defining the core spine."
+    };
+  }
+
+  return {
+    branchType: "foundational_theory",
+    branchLabel: "Lineage backbone",
+    branchReason: "Direct influences on the path toward your seed paper."
+  };
+}
+
+function attachBranchSemantics(nodes, rootNode, queryProfile) {
+  const rootYear = rootNode?.year ?? null;
+  return nodes.map((node) => {
+    const depth = Number.isFinite(Number(node.depth)) ? Number(node.depth) : 0;
+    const sem = inferBranchSemantics(node, queryProfile, { depth, rootYear });
+    return { ...node, ...sem };
+  });
+}
+
 function readingStageConfig(stage) {
   if (stage === "start_here") {
     return {
@@ -429,6 +540,116 @@ function buildClarificationPhrases(clarification) {
   return [...new Set(phrases.filter(Boolean))];
 }
 
+function hasClarificationFields(clarification) {
+  const c = normalizeClarification(clarification);
+  return Boolean(c.focus || c.material || c.goal);
+}
+
+function capBroadTopicQueries(queries, queryProfile, clarificationInput, max = BROAD_QUERY_CAP) {
+  if (!queryProfile.broadTopic || queries.length <= max) return queries;
+  const c = normalizeClarification(clarificationInput);
+  if (!hasClarificationFields(c)) {
+    return queries.slice(0, max);
+  }
+
+  const baseSet = new Set(
+    expandBaseAliases(queryProfile.normalized.trim())
+      .map((variant) => variant.toLowerCase().trim())
+      .filter(Boolean)
+  );
+
+  const focusTerms = (c.focus ? CLARIFICATION_TERMS.focus[c.focus] : []).filter((t) => t.length >= 3);
+  const materialTerms = c.material ? CLARIFICATION_TERMS.material[c.material] || [] : [];
+  const goalTerms = c.goal ? CLARIFICATION_TERMS.goal[c.goal] || [] : [];
+
+  const scored = queries.map((q) => {
+    const lower = q.toLowerCase().trim();
+    let priority = 0;
+    if (baseSet.has(lower)) priority += 520;
+    for (const t of focusTerms) {
+      if (t.length >= 4 && lower.includes(t)) priority += 120;
+      else if (lower.includes(t)) priority += 70;
+    }
+    for (const t of materialTerms) {
+      if (t.length >= 4 && lower.includes(t)) priority += 45;
+    }
+    for (const t of goalTerms) {
+      if (t.length >= 4 && lower.includes(t)) priority += 35;
+    }
+    if (c.goal) {
+      for (const phrase of GOAL_RETRIEVAL_PHRASES[c.goal] || []) {
+        if (phrase.length >= 3 && lower.includes(phrase.toLowerCase())) priority += 110;
+      }
+    }
+    if (c.material) {
+      for (const phrase of MATERIAL_RETRIEVAL_PHRASES[c.material] || []) {
+        if (phrase.length >= 3 && lower.includes(phrase.toLowerCase())) priority += 95;
+      }
+    }
+    if (lower.includes(String(queryProfile.normalized).toLowerCase())) priority += 25;
+    priority -= q.split(/\s+/).length * 2;
+    return { q, priority };
+  });
+
+  scored.sort((a, b) => b.priority - a.priority || a.q.length - b.q.length);
+  const ordered = [];
+  const seen = new Set();
+  for (const { q } of scored) {
+    const key = q.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordered.push(q.trim());
+    if (ordered.length >= max) break;
+  }
+  return ordered;
+}
+
+function mergeDedupeKey(item) {
+  const id = String(item.paperId || item.doi || "").trim().toLowerCase();
+  if (id) return `id:${id}`;
+  return `t:${String(item.title || "").toLowerCase().trim()}`;
+}
+
+function titleTokenJaccard(leftPaper, rightPaper) {
+  const A = new Set(uniqueTokens(`${leftPaper.title || ""} ${leftPaper.abstract || ""}`));
+  const B = new Set(uniqueTokens(`${rightPaper.title || ""} ${rightPaper.abstract || ""}`));
+  if (A.size === 0 && B.size === 0) return 1;
+  let inter = 0;
+  for (const t of A) {
+    if (B.has(t)) inter += 1;
+  }
+  const union = A.size + B.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+function diversifyPapersByTitle(papers, limit, maxNeighborSim = 0.58) {
+  if (!Array.isArray(papers) || papers.length <= limit) return papers;
+  const picked = [];
+  const pickedIds = new Set();
+
+  for (const paper of papers) {
+    if (picked.length >= limit) break;
+    const key = mergeDedupeKey(paper);
+    if (pickedIds.has(key)) continue;
+    const tooSimilar = picked.some((existing) => titleTokenJaccard(existing, paper) >= maxNeighborSim);
+    if (tooSimilar) continue;
+    picked.push(paper);
+    pickedIds.add(key);
+  }
+
+  if (picked.length < limit) {
+    for (const paper of papers) {
+      if (picked.length >= limit) break;
+      const key = mergeDedupeKey(paper);
+      if (pickedIds.has(key)) continue;
+      picked.push(paper);
+      pickedIds.add(key);
+    }
+  }
+
+  return picked;
+}
+
 function buildCandidateQueries(queryProfile, clarificationInput = null) {
   const base = queryProfile.normalized.trim();
   if (!base) return [];
@@ -454,6 +675,30 @@ function buildCandidateQueries(queryProfile, clarificationInput = null) {
     if (compactTopic && compactTopic !== base.toLowerCase()) {
       queries.push(compactTopic);
     }
+
+    if (hasClarificationFields(clarification)) {
+      const goalPhrases = clarification.goal ? GOAL_RETRIEVAL_PHRASES[clarification.goal] || [] : [];
+      const materialPhrases = clarification.material ? MATERIAL_RETRIEVAL_PHRASES[clarification.material] || [] : [];
+
+      for (const variant of baseVariants) {
+        for (const phrase of goalPhrases) {
+          queries.push(`${variant} ${phrase}`);
+        }
+        for (const phrase of materialPhrases) {
+          queries.push(`${variant} ${phrase}`);
+        }
+        if (clarification.focus && clarification.material) {
+          const mTerms = CLARIFICATION_TERMS.material[clarification.material] || [];
+          const anchor = mTerms[0] || clarification.material;
+          queries.push(`${variant} ${clarification.focus} ${anchor}`);
+        }
+        if (clarification.focus && clarification.goal) {
+          const gTerms = CLARIFICATION_TERMS.goal[clarification.goal] || [];
+          const anchor = gTerms[0] || clarification.goal;
+          queries.push(`${variant} ${clarification.focus} ${anchor}`);
+        }
+      }
+    }
   }
 
   if (clarifiedPhrases.length > 0) {
@@ -472,7 +717,8 @@ function buildCandidateQueries(queryProfile, clarificationInput = null) {
     }
   }
 
-  return [...new Set(queries.map((query) => query.trim()).filter(Boolean))];
+  const uniq = [...new Set(queries.map((query) => query.trim()).filter(Boolean))];
+  return capBroadTopicQueries(uniq, queryProfile, clarificationInput);
 }
 
 function inferMatchReason(paper, queryProfile) {
@@ -514,6 +760,51 @@ function scoreClarificationFit(paper, clarification) {
   if (normalized.goal === "build" && /system|framework|application|deployment|implementation/i.test(`${paper.title || ""} ${paper.abstract || ""}`)) score += 22;
 
   return score;
+}
+
+function clarificationFocusPhraseHits(paper, clarification) {
+  const c = normalizeClarification(clarification);
+  if (!c.focus) return 1;
+  const haystack = `${paper.title || ""} ${paper.abstract || ""}`.toLowerCase();
+  const terms = CLARIFICATION_TERMS.focus[c.focus] || [];
+  let hits = 0;
+  for (const token of terms) {
+    if (token.length >= 4 && haystack.includes(token)) hits += 1;
+  }
+  return hits;
+}
+
+function passesClarifiedBroadTopicGate(paper, queryProfile, clarification) {
+  if (!queryProfile.broadTopic) return true;
+  const c = normalizeClarification(clarification);
+  if (!hasClarificationFields(c)) return true;
+
+  const fit = scoreClarificationFit(paper, c);
+  const focusHits = clarificationFocusPhraseHits(paper, c);
+
+  if (c.focus) {
+    if (focusHits >= 1) return true;
+    if (fit >= 16) return true;
+    if (c.material === "survey" && hasSurveyHint(`${paper.title || ""} ${paper.abstract || ""}`) && fit >= 8) {
+      return true;
+    }
+    return false;
+  }
+
+  if (fit >= 9) return true;
+  const hay = `${paper.title || ""} ${paper.abstract || ""}`.toLowerCase();
+  let materialOrGoalHit = 0;
+  if (c.material) {
+    for (const t of CLARIFICATION_TERMS.material[c.material] || []) {
+      if (t.length >= 4 && hay.includes(t)) materialOrGoalHit += 1;
+    }
+  }
+  if (c.goal) {
+    for (const t of CLARIFICATION_TERMS.goal[c.goal] || []) {
+      if (t.length >= 4 && hay.includes(t)) materialOrGoalHit += 1;
+    }
+  }
+  return materialOrGoalHit >= 1 || fit >= 6;
 }
 
 function scoreSeedPaper(paper, queryProfile, clarification = null) {
@@ -732,7 +1023,9 @@ async function fetchExternalPapers(topic, limit = 20, clarification = null) {
   const queryProfile = classifyQuery(topic);
   const normalizedClarification = normalizeClarification(clarification);
   const candidateQueries = buildCandidateQueries(queryProfile, normalizedClarification);
-  const perQueryLimit = queryProfile.broadTopic ? Math.min(Math.max(limit, 5), 8) : Math.min(limit, 20);
+  const perQueryLimit = queryProfile.broadTopic
+    ? Math.min(Math.max(limit, 5), BROAD_PER_QUERY_LIMIT)
+    : Math.min(limit, 20);
 
   const settledGroups = await Promise.all(
     candidateQueries.map(async (query) => {
@@ -751,12 +1044,30 @@ async function fetchExternalPapers(topic, limit = 20, clarification = null) {
   const merged = settledGroups.flat();
   const seen = new Set();
   const deduped = merged.filter((item) => {
-    const key = `${item.title}`.toLowerCase().trim();
+    const key = mergeDedupeKey(item);
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-  return deduped
+
+  let pool = deduped;
+  if (queryProfile.broadTopic && pool.length > BROAD_MERGED_POOL_CAP) {
+    pool = pool.slice(0, BROAD_MERGED_POOL_CAP);
+  }
+
+  let workingPool = pool.filter((item) =>
+    passesClarifiedBroadTopicGate(item, queryProfile, normalizedClarification)
+  );
+  if (
+    workingPool.length === 0 &&
+    queryProfile.broadTopic &&
+    hasClarificationFields(normalizedClarification) &&
+    pool.length > 0
+  ) {
+    workingPool = pool;
+  }
+
+  const scored = workingPool
     .map((item) => {
       const score = scoreSeedPaper(item, queryProfile, normalizedClarification);
       const roleMeta = classifyPaperRole(item, queryProfile, { depth: 0 });
@@ -773,7 +1084,11 @@ async function fetchExternalPapers(topic, limit = 20, clarification = null) {
       const scoreGap = right.recommendationScore - left.recommendationScore;
       if (scoreGap !== 0) return scoreGap;
       return String(left.title).localeCompare(String(right.title));
-    })
+    });
+
+  const diversified = queryProfile.broadTopic ? diversifyPapersByTitle(scored, limit) : scored;
+
+  return diversified
     .slice(0, limit)
     .map((item, index) =>
       queryProfile.exactishTitle && index > 0 && item.role === "seed"
@@ -1195,6 +1510,8 @@ async function buildFallbackTree(paper) {
     links.push({ source: item.attachToId || rootId, target: item.id });
   });
 
+  const graphNodes = attachBranchSemantics(nodes, nodes[0], queryProfile);
+
   const readingPlan = buildReadingPlan(suggestedAncestors, { queryProfile });
   const companionResources = buildCompanionResources(
     {
@@ -1206,9 +1523,21 @@ async function buildFallbackTree(paper) {
     queryProfile
   );
 
+  const byGraphId = new Map(graphNodes.map((n) => [n.id, n]));
+  const recommendedOrderWithBranches = suggestedAncestors.map((item) => {
+    const g = byGraphId.get(item.id);
+    if (!g) return item;
+    return {
+      ...item,
+      branchType: g.branchType,
+      branchLabel: g.branchLabel,
+      branchReason: g.branchReason
+    };
+  });
+
   return {
     data: {
-      nodes,
+      nodes: graphNodes,
       links,
       meta: {
         source: "fallback",
@@ -1218,7 +1547,7 @@ async function buildFallbackTree(paper) {
           title: `Start with ${rootTitle}`,
           summary:
             "PaperTrail could not fetch live citation ancestry for this seed, so it synthesized a broader guided learning tree from related papers and topic context.",
-          recommendedOrder: suggestedAncestors,
+          recommendedOrder: recommendedOrderWithBranches,
           readingPlan,
           companionResources
         },
@@ -1365,6 +1694,9 @@ function buildGuide(nodes, rootNode) {
         authors: Array.isArray(node.authors) ? node.authors : [],
         abstract: node.abstract || "",
         stage: storyStage,
+        branchType: node.branchType,
+        branchLabel: node.branchLabel,
+        branchReason: node.branchReason,
         reason:
           index === 0
             ? "Best first background read before the seed paper"
@@ -1393,6 +1725,116 @@ function buildGuide(nodes, rootNode) {
   };
 }
 
+function referenceHasStableId(reference) {
+  if (!reference || typeof reference !== "object") return false;
+  return Boolean(
+    reference.paperId ||
+    reference.doi ||
+    reference.externalIds?.DOI
+  );
+}
+
+/**
+ * Lineage strength from resolved Semantic Scholar payload only (capped).
+ * Clarification is applied separately so it cannot max out depth by itself.
+ */
+function computeStructureLineageScore(rootPaper) {
+  const refs = Array.isArray(rootPaper?.references) ? rootPaper.references : [];
+  const refCount = refs.length;
+  const refWithId = refs.filter(referenceHasStableId).length;
+  let structure = 0;
+  structure += Math.min(refCount * 5, 35);
+  structure += Math.min(refWithId * 4, 28);
+  const citationCount = Number(rootPaper?.citationCount ?? 0);
+  if (Number.isFinite(citationCount) && citationCount > 0) {
+    structure += Math.min(citationCount / 12, 32);
+  }
+  if (rootPaper?.paperId) structure += 8;
+  if (rootPaper?.doi || rootPaper?.externalIds?.DOI) structure += 8;
+  const abstractText = String(rootPaper?.abstract || "").trim();
+  if (abstractText.length > 120) structure += 6;
+
+  return {
+    structureScore: Math.min(88, Math.round(structure)),
+    refCount,
+    refWithId,
+    citationCount: Number.isFinite(citationCount) ? citationCount : 0
+  };
+}
+
+function clarificationLineageBump(seedPaper) {
+  const c = normalizeClarification(seedPaper?.clarification);
+  let bump = 0;
+  if (c.focus) bump += 4;
+  if (c.material) bump += 3;
+  if (c.goal) bump += 3;
+  return Math.min(12, bump);
+}
+
+/**
+ * Maps structure + light clarification context to depth / breadth / node cap.
+ * Depth 4 requires both a decent quality score and enough identified references.
+ */
+function computeAdaptiveTreeBudget(rootPaper, seedPaper = {}) {
+  const { structureScore, refCount, refWithId, citationCount } = computeStructureLineageScore(rootPaper);
+  const clarificationBump = clarificationLineageBump(seedPaper);
+  const qualityScore = Math.min(100, structureScore + clarificationBump);
+  const queryProfile = classifyQuery(seedPaper?.query || seedPaper?.title || rootPaper?.title || "");
+
+  const graphReadyForDeep =
+    refCount >= 5 &&
+    refWithId >= 3 &&
+    (structureScore >= 52 || (citationCount >= 100 && refWithId >= 4));
+  const exceptionalGraph =
+    refCount >= 3 &&
+    refWithId >= 2 &&
+    (citationCount >= 320 || structureScore >= 80);
+
+  let qualityTier = "standard";
+  let budgetReason = "Balanced tree: citation graph looks usable but not exceptionally rich.";
+  let depthLimit = 3;
+  let breadthLimit = 4;
+  let totalNodeLimit = 18;
+
+  if (qualityScore >= 74 && graphReadyForDeep) {
+    qualityTier = "strong";
+    budgetReason =
+      "Deeper tree: many identified references and strong metadata support expanding another generation.";
+    depthLimit = 4;
+    breadthLimit = 5;
+    totalNodeLimit = queryProfile.broadTopic ? 22 : 20;
+  } else if (exceptionalGraph && qualityScore >= 70) {
+    qualityTier = "strong";
+    budgetReason =
+      "Deeper tree: very high influence or dense reference metadata supports an extra layer.";
+    depthLimit = 4;
+    breadthLimit = 5;
+    totalNodeLimit = queryProfile.broadTopic ? 22 : 20;
+  } else if (qualityScore < 34) {
+    qualityTier = "sparse";
+    budgetReason =
+      "Shallow tree: few references or weak identifiers from the source; limiting depth avoids empty branches.";
+    depthLimit = 2;
+    breadthLimit = 3;
+    totalNodeLimit = 13;
+  }
+
+  return {
+    depthLimit,
+    breadthLimit,
+    totalNodeLimit,
+    adaptiveBudget: {
+      qualityScore,
+      structureScore,
+      clarificationBump,
+      qualityTier,
+      budgetReason,
+      refCount,
+      refWithId
+    }
+  };
+}
+
 function chooseTreeBudget(rootPaper, options = {}, seedPaper = {}) {
   const explicitDepth = Number(options.depth);
   const explicitBreadth = Number(options.breadth);
@@ -1402,31 +1844,25 @@ function chooseTreeBudget(rootPaper, options = {}, seedPaper = {}) {
     return {
       depthLimit: Math.max(1, Math.min(explicitDepth || 3, 4)),
       breadthLimit: Math.max(1, Math.min(explicitBreadth || 4, 6)),
-      totalNodeLimit: Math.max(6, Math.min(explicitMaxNodes || 18, 28))
+      totalNodeLimit: Math.max(6, Math.min(explicitMaxNodes || 18, 28)),
+      adaptiveBudget: {
+        qualityTier: "explicit",
+        budgetReason: "Using request depth, breadth, or maxNodes instead of automatic quality-based limits."
+      }
     };
   }
 
-  const references = Array.isArray(rootPaper?.references) ? rootPaper.references.length : 0;
-  const citationCount = Number.isFinite(Number(rootPaper?.citationCount)) ? Number(rootPaper.citationCount) : 0;
-  const queryProfile = classifyQuery(seedPaper?.query || seedPaper?.title || rootPaper?.title || "");
-  const clarification = normalizeClarification(seedPaper?.clarification);
-  const strongSeed =
-    references >= 6 ||
-    citationCount >= 120 ||
-    Boolean(rootPaper?.paperId && rootPaper?.doi) ||
-    Boolean(clarification.focus || clarification.material || clarification.goal);
-
-  return {
-    depthLimit: strongSeed ? 4 : 3,
-    breadthLimit: strongSeed ? 5 : 4,
-    totalNodeLimit: strongSeed && queryProfile.broadTopic ? 22 : strongSeed ? 20 : 18
-  };
+  return computeAdaptiveTreeBudget(rootPaper, seedPaper);
 }
 
 async function fetchAncestorTree(seedPaper, options = {}) {
   try {
     const rootPaper = await resolvePaperSeed(seedPaper);
-    const { depthLimit, breadthLimit, totalNodeLimit } = chooseTreeBudget(rootPaper, options, seedPaper);
+    const { depthLimit, breadthLimit, totalNodeLimit, adaptiveBudget } = chooseTreeBudget(
+      rootPaper,
+      options,
+      seedPaper
+    );
     const queryProfile = classifyQuery(seedPaper?.query || seedPaper?.title || rootPaper?.title || "");
     const scoringRoot = buildNode(rootPaper, 0);
     scoringRoot.query = seedPaper?.query || seedPaper?.title || rootPaper?.title || "";
@@ -1498,9 +1934,11 @@ async function fetchAncestorTree(seedPaper, options = {}) {
           })
         : { nodes, links };
 
+    const graphNodes = attachBranchSemantics(maybeSupplemented.nodes, rootNode, queryProfile);
+
     return {
       data: {
-        nodes: maybeSupplemented.nodes,
+        nodes: graphNodes,
         links: maybeSupplemented.links,
         meta: {
           source: "semantic_scholar",
@@ -1508,7 +1946,8 @@ async function fetchAncestorTree(seedPaper, options = {}) {
           rootTitle: rootNode.title,
           depthLimit,
           breadthLimit,
-          guide: buildGuide(maybeSupplemented.nodes, rootNode)
+          adaptiveBudget,
+          guide: buildGuide(graphNodes, rootNode)
         }
       }
     };
@@ -1542,13 +1981,22 @@ module.exports = {
     buildGuide,
     buildNode,
     buildReadingPlan,
+    attachBranchSemantics,
+    inferBranchSemantics,
     classifyQuery,
     classifyPaperRole,
     chooseTreeBudget,
+    computeAdaptiveTreeBudget,
+    computeStructureLineageScore,
     inferMatchReason,
     normalizeClarification,
     referenceBreadthForDepth,
     scoreClarificationFit,
+    passesClarifiedBroadTopicGate,
+    diversifyPapersByTitle,
+    capBroadTopicQueries,
+    hasClarificationFields,
+    mergeDedupeKey,
     selectReferenceCandidates,
     scoreAncestorNode,
     scoreSeedPaper

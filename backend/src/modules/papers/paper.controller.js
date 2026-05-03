@@ -94,6 +94,24 @@ class PaperController {
       next(error);
     }
   }
+
+  async deleteSavedPaper(req, res, next) {
+    try {
+      await paperService.deleteSavedPaperForWorkspace(req.params.id, req.user?.id);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteResearchTrail(req, res, next) {
+    try {
+      await paperService.deleteResearchTrailForWorkspace(req.params.id, req.user?.id);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new PaperController();

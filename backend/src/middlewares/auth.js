@@ -1,9 +1,9 @@
 const authService = require("../modules/auth/auth.service");
 
 function getTokenFromRequest(req) {
-  const header = req.headers?.authorization || "";
-  if (!header.startsWith("Bearer ")) return null;
-  return header.slice("Bearer ".length).trim();
+  const header = String(req.headers?.authorization || req.headers?.Authorization || "").trim();
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
 }
 
 async function optionalAuth(req, _res, next) {
@@ -27,7 +27,7 @@ async function requireAuth(req, res, next) {
     req.user = user;
     return next();
   } catch (error) {
-    return res.status(401).json({ error: "Unauthorized" });
+    return next(error);
   }
 }
 
