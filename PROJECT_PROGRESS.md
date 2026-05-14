@@ -591,6 +591,9 @@ What is working well now:
 - The merged branch now includes auth and a fuller workbench experience
 - The repo has a first-pass deployment path
 - The workbench ancestor panel and sidebar behavior respect empty-state and login boundaries
+- **Manual light/dark theme** with token-driven surfaces, accents, and transitions; workbench and badges stay readable in both themes
+- **Optional 3D lineage view** alongside the existing 2D ancestor map, sharing the same normalized graph data
+- **Save trail** correctly blocks unauthenticated saves with a clear toast instead of implying success
 
 What still needs work:
 - Better semantic meaning inside the tree branches
@@ -600,6 +603,7 @@ What still needs work:
 - Stronger graph modeling in Neo4j
 - More test coverage across backend and frontend
 - A full live deployment and production smoke test
+- Smaller or progressive loading for the 3D graph chunk on slow connections
 
 ## Pass 15: Broad-Topic Refinement And Adaptive Tree Depth
 
@@ -653,15 +657,84 @@ Make PaperTrail materially better on broad prompts by:
 - Adaptive depth is now smarter, but still conservative and should be made more quality-aware
 - Live citation ancestry still depends on external source coverage when Neo4j is unavailable
 
+## Pass 16: Manual dark mode and token-driven UI
+
+### Goal
+
+Ship a deliberate light/dark experience that matches the rest of the product: readable text, layered surfaces (not flat grey), and no accidental “light tokens on dark chrome” bugs.
+
+### Changes Made
+
+- **Theme model:** `data-theme` on the document root (`light` / `dark`), set from `localStorage` when present and otherwise from `prefers-color-scheme` on first paint (inline script in `client/index.html` avoids a flash of wrong theme).
+- **Design tokens:** Large `:root` and `[data-theme="dark"]` blocks in `client/src/styles.css` — elevation backgrounds, text steps, borders (including subtle rgba borders in dark), accent purple tuned for dark surfaces (hover goes lighter, not darker), semantic status colours, scrollbars, and a short-lived `.theme-transitioning` class on `<html>` so only theme toggles animate globally.
+- **Workbench fixes:** Right-rail “starting point” cards no longer used a fixed light `ux-card-tilt` mix over dark tokens (white frame + invisible disabled save). Cards and disabled save states now follow the same surface and readable text rules as the rest of dark mode.
+- **Hero / hints:** Canvas and seed-switcher badges keep legible pill text in dark mode (deep purple on light pill where needed).
+- **Particles and graphs:** Background particle colours and D3/SVG graph colours read from CSS variables so theme switches do not leave hard-coded light colours behind (`App.jsx`, `Particles.jsx`, `ForceGraph.jsx`, `AncestorTree.tsx` stage colours).
+- **Backend (same integration window):** Continued paper/auth/workspace-related server updates aligned with the client workbench (routes, persistence, auth middleware) — see git history on `main` for exact files.
+
+### Key Files
+
+- [client/index.html](client/index.html)
+- [client/src/styles.css](client/src/styles.css)
+- [client/src/App.jsx](client/src/App.jsx)
+- [client/src/components/Particles.jsx](client/src/components/Particles.jsx)
+- [client/src/components/ForceGraph.jsx](client/src/components/ForceGraph.jsx)
+- [client/src/components/AncestorTree.tsx](client/src/components/AncestorTree.tsx)
+- [client/src/ux/liveChrome.js](client/src/ux/liveChrome.js) (theme toggle + button chrome)
+- Backend: `backend/src/app.js`, `backend/src/routes/index.js`, `backend/src/middlewares/auth.js`, `backend/src/modules/auth/auth.service.js`, `backend/src/modules/papers/*` (as merged on `main`)
+
+### Verification
+
+- `npm run build` in `client/`
+- Manual: toggle theme, open workbench, confirm seed cards, badges, and graph read clearly in both themes
+
+### Remaining Weaknesses
+
+- The 3D graph chunk is separate (Pass 17); further polish (LOD, lighter labels) is optional
+- Some secondary screens may still need token passes if new UI is added without variables
+- Production theme should be re-checked after any new third-party widgets
+
+## Pass 17: 3D lineage view, save-trail guard, and shared graph data
+
+### Goal
+
+Let users explore the same ancestor lineage in an interactive 3D view without forking business logic, and prevent misleading “saved” UI when saving trails requires authentication.
+
+### Changes Made
+
+- **Shared normalization:** Moved graph normalization (nodes, links, lineage orientation) into [client/src/lib/ancestorGraphData.js](client/src/lib/ancestorGraphData.js) and import it from the 2D tree so 2D and 3D always agree on structure.
+- **3D view:** New [client/src/components/graph/ResearchGraph3D.jsx](client/src/components/graph/ResearchGraph3D.jsx) using `react-force-graph-3d`, `three`, and `three-spritetext` — orbit controls, theme-aware colours from CSS variables, default zoom after the force engine stops, lineage vs context links, **labels only on hover except the seed (★) node which stays labeled**.
+- **Integration:** `AncestorTree` adds a top-right **3D / 2D** toggle; 3D is **lazy-loaded** (separate bundle) to keep first paint smaller; when 3D is active the heavy 2D layout pass is skipped; new graph data resets to 2D.
+- **Save trail:** If the user is not logged in, **Save trail** no longer hits the API or shows “trail saved”; a **fixed bottom-right notice** explains that login is required (timer + cleanup on login/logout).
+- **Chrome:** `liveChrome` ripple/hover list includes the view-mode button.
+
+### Key Files
+
+- [client/src/lib/ancestorGraphData.js](client/src/lib/ancestorGraphData.js)
+- [client/src/components/graph/ResearchGraph3D.jsx](client/src/components/graph/ResearchGraph3D.jsx)
+- [client/src/components/AncestorTree.tsx](client/src/components/AncestorTree.tsx)
+- [client/src/App.jsx](client/src/App.jsx)
+- [client/src/styles.css](client/src/styles.css)
+- [client/src/ux/liveChrome.js](client/src/ux/liveChrome.js)
+- [client/package.json](client/package.json)
+
+### Verification
+
+- `npm run build` in `client/` (main bundle stays smaller; 3D loads as its own chunk)
+- Manual: build a tree, switch 3D, orbit/zoom, hover nodes for labels, click to select; log out and click **Save trail** → notice appears, button text unchanged
+
+### Remaining Weaknesses
+
+- 3D bundle is still large (Three + force layout); further splitting or lighter labels could help slow networks
+- No dedicated 3D “details” panel beyond the existing node inspector
+- `onEngineStop` default zoom runs once per graph; unusual graph sizes may still need user zoom
+
 ## Next Best Step
 
-The next passes for a teammate picking up from `main` at `a80a349` should be:
-1. `Branch semantics`
-Make the tree explain what kind of understanding each branch gives the user.
-2. `Broader-topic retrieval quality`
-Keep tightening clarification-aware retrieval so vague prompts produce better candidate pools.
-3. `Adaptive depth tuning`
-Allow stronger topics to open into deeper trees without making weak topics noisy.
+The next passes for a teammate picking up from `main` (latest: includes Passes 16–17 above) should be:
+1. **`Branch semantics`** — Make the tree explain what kind of understanding each branch gives the user.
+2. **`Broader-topic retrieval quality`** — Keep tightening clarification-aware retrieval so vague prompts produce better candidate pools.
+3. **`Adaptive depth tuning`** — Allow stronger topics to open into deeper trees without making weak topics noisy.
 
 ## Update Rule
 
