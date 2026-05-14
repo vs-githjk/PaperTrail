@@ -349,6 +349,8 @@ export default function App() {
   const [undoToast, setUndoToast] = useState(null);
   const undoCommitTimerRef = useRef(null);
   const pendingWorkspaceDeleteRef = useRef(null);
+  const [authNoticeToast, setAuthNoticeToast] = useState(null);
+  const authNoticeTimerRef = useRef(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -456,6 +458,18 @@ export default function App() {
     if (!root) return undefined;
     return mountLiveChrome(root);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(authNoticeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    window.clearTimeout(authNoticeTimerRef.current);
+    setAuthNoticeToast(null);
+  }, [isLoggedIn]);
 
   useEffect(() => {
     const nav = navActionsRef.current;
@@ -1087,6 +1101,16 @@ export default function App() {
   async function handleSaveTrail() {
     if (!graphData || !selectedPaper) return;
 
+    if (!isLoggedIn) {
+      window.clearTimeout(authNoticeTimerRef.current);
+      setAuthNoticeToast("You must be logged in to save a research trail.");
+      authNoticeTimerRef.current = window.setTimeout(() => {
+        setAuthNoticeToast(null);
+        authNoticeTimerRef.current = null;
+      }, 5200);
+      return;
+    }
+
     setSavingTrail(true);
     try {
       const response = await fetch(`${API_BASE}/api/research-trails/save`, {
@@ -1221,6 +1245,8 @@ export default function App() {
     setFocusedNode(null);
     setClarification({ focus: "", material: "", goal: "" });
     setTrailSaved(false);
+    window.clearTimeout(authNoticeTimerRef.current);
+    setAuthNoticeToast(null);
   }
 
   return (
@@ -2080,6 +2106,13 @@ export default function App() {
             <button type="button" className="workspace-undo-toast-action" onClick={undoWorkspaceDelete}>
               Undo
             </button>
+          </div>
+        </div>
+      ) : null}
+      {authNoticeToast ? (
+        <div className="workspace-undo-toast workspace-auth-notice-toast" role="alert" aria-live="assertive">
+          <div className="workspace-undo-toast-inner workspace-auth-notice-toast-inner">
+            <span className="workspace-undo-toast-text">{authNoticeToast}</span>
           </div>
         </div>
       ) : null}

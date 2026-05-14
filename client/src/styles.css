@@ -2214,6 +2214,76 @@ pre {
   pointer-events: auto;
 }
 
+.ancestor-tree-view-controls {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.ancestor-view-mode-btn {
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--color-purple-300) 75%, transparent);
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-family: var(--pt-font-ui);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-purple-800);
+  background: color-mix(in srgb, var(--color-white) 90%, var(--color-purple-50));
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-purple-900) 12%, transparent);
+  transition: transform 200ms cubic-bezier(0.25, 0, 0, 1), background-color var(--pt-move) var(--pt-ease),
+    border-color var(--pt-move) var(--pt-ease), color var(--pt-move) var(--pt-ease);
+}
+
+.ancestor-view-mode-btn:hover {
+  transform: translate3d(0, -1px, 0);
+  border-color: var(--color-purple-500);
+  background: var(--color-white);
+}
+
+.ancestor-view-mode-btn:active {
+  transform: translate3d(0, 0, 0) scale(0.97);
+}
+
+.ancestor-view-mode-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-focus-ring-subtle);
+}
+
+.ancestor-view-mode-btn[aria-pressed="true"] {
+  border-color: var(--color-purple-600);
+  background: color-mix(in srgb, var(--color-purple-100) 55%, var(--color-white));
+}
+
+.ancestor-tree-3d-root {
+  position: relative;
+  z-index: 2;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--color-bg-base);
+}
+
+.ancestor-tree-3d-suspense {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-purple-50) 72%, var(--color-white));
+}
+
+.ancestor-tree-3d-suspense-copy {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
 .ancestor-tree-summary {
   display: inline-flex;
   gap: 8px;
@@ -3328,6 +3398,14 @@ section {
   transform: scale(0.97);
 }
 
+.workspace-auth-notice-toast-inner {
+  justify-content: flex-start;
+}
+
+.workspace-auth-notice-toast .workspace-undo-toast-text {
+  max-width: 100%;
+}
+
 .workspace-list li::after,
 .history-workspace-list .history-row::after {
   content: "→";
@@ -3797,6 +3875,15 @@ section {
   color: var(--color-text-primary);
 }
 
+/* Light pill on purple hero: heading token is near-white in dark — use deep purple ink like the panel */
+[data-theme="dark"] .canvas-empty .canvas-badge,
+[data-theme="dark"] .canvas-header .canvas-badge,
+[data-theme="dark"] .seed-switcher-hint .canvas-badge {
+  background: var(--color-white);
+  color: var(--color-purple-900);
+  border-color: color-mix(in srgb, var(--color-purple-900) 22%, transparent);
+}
+
 [data-theme="dark"] .canvas-subtitle,
 [data-theme="dark"] .panel-microcopy {
   color: var(--color-text-secondary);
@@ -3822,6 +3909,32 @@ section {
   background: var(--color-bg-elevated);
   border-color: var(--color-border-default);
   color: var(--color-text-secondary);
+}
+
+[data-theme="dark"] .ancestor-view-mode-btn {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-default);
+  background: var(--color-bg-surface);
+  box-shadow: none;
+}
+
+[data-theme="dark"] .ancestor-view-mode-btn:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-hover);
+}
+
+[data-theme="dark"] .ancestor-view-mode-btn[aria-pressed="true"] {
+  border-color: var(--color-accent-default);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-hover);
+}
+
+[data-theme="dark"] .ancestor-view-mode-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgb(167 139 250 / 0.28);
+}
+
+[data-theme="dark"] .ancestor-tree-3d-suspense {
+  background: var(--color-bg-subtle);
 }
 
 [data-theme="dark"] .tree-placeholder {
